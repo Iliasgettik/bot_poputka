@@ -231,7 +231,7 @@ async def process_phone(message: types.Message, state: FSMContext):
     icon = "🚕" if data['role'] == "водитель" else "👤"
     user_label = "Водитель" if data['role'] == "водитель" else "Пассажир"
     
-    text = (f"{icon} <b>НОВАЯ ЗАЯВКА ({role_name})</b>\n\n"
+    text = (f"{icon} <b>{role_name}</b>\n\n"
             f"📍 <b>Куда</b>: {data['destination']}\n"
             f"🕒 <b>Время</b>: {data['time']}\n")
     
