@@ -1,19 +1,8 @@
-#prod
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-API_TOKEN = os.getenv("API_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_KEY")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-raw_id = os.getenv("CHANNEL_ID")
-CHANNEL_ID = int(raw_id) if raw_id else None
-
 import logging
 import asyncio
 import datetime
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
@@ -23,7 +12,14 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from supabase import create_client, Client
 
 # --- КОНФИГУРАЦИЯ ---
+load_dotenv()
 
+API_TOKEN = os.getenv("API_TOKEN")
+OPENAI_KEY = os.getenv("OPENAI_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+raw_id = os.getenv("CHANNEL_ID")
+CHANNEL_ID = int(raw_id) if raw_id else None
 
 logging.basicConfig(level=logging.INFO)
 
@@ -44,27 +40,32 @@ class TaxiStates(StatesGroup):
 async def cleanup_old_messages():
     while True:
         try:
+            # Вычисляем время 3 дня назад
             three_days_ago = (datetime.datetime.now() - datetime.timedelta(days=3)).isoformat()
+            # Ищем старые записи, у которых есть message_id
             res = supabase.table("users").select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
+            
             for record in res.data:
-                try: await bot.delete_message(chat_id=CHANNEL_ID, message_id=record["message_id"])
-                except: pass
+                try: 
+                    # Удаляем сообщение из канала
+                    await bot.delete_message(chat_id=CHANNEL_ID, message_id=record["message_id"])
+                except: 
+                    pass
+                # Обнуляем message_id в базе, чтобы не пытаться удалить снова
                 supabase.table("users").update({"message_id": None}).eq("id", record["id"]).execute()
         except Exception as e:
             logging.error(f"Ошибка очистки: {e}")
-        await asyncio.sleep(3600)
+        await asyncio.sleep(3600) # Проверка каждый час
 
 # --- КЛАВИАТУРЫ ---
 
 def get_start_inline_kb():
-    # Только инлайн-кнопки для первого сообщения
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🚕 Я Водитель", callback_data="set_role_водитель"))
     builder.row(types.InlineKeyboardButton(text="👤 Я Пассажир", callback_data="set_role_пассажир"))
     return builder.as_markup()
 
 def get_cities_kb():
-    # Города остаются обычными кнопками для удобства ввода
     kb = [[types.KeyboardButton(text="Талас"), types.KeyboardButton(text="Кировка")], [types.KeyboardButton(text="Бишкек")]]
     return types.ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
@@ -93,8 +94,7 @@ def get_phone_kb():
 
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
-    # Deep link ?start=go для автоматического вызова приветствия
-    builder.row(types.InlineKeyboardButton(text="➕ Создать объявление", url="https://t.me/poputka_24_bot?start=go"))
+    builder.row(types.InlineKeyboardButton(text="➕ Создать объявление", url=f"https://t.me/{(await bot.get_me()).username}?start=go"))
     return builder.as_markup()
 
 # --- ОБРАБОТЧИКИ ---
@@ -102,18 +102,9 @@ def get_channel_publish_kb():
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
-    welcome_text = (
-        "👋 <b>Здравствуйте!</b>\n\n"
-        "Чтобы подать объявление, выберите вашу роль ниже:"
-    )
-    # Только одно сообщение с кнопками выбора
+    welcome_text = "👋 <b>Здравствуйте!</b>\n\nЧтобы подать объявление, выберите вашу роль ниже:"
     await message.answer(welcome_text, reply_markup=get_start_inline_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.choosing_role)
-
-@dp.callback_query(F.data == "start_over")
-async def process_start_over(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await cmd_start(callback.message, state)
 
 @dp.callback_query(F.data.startswith("set_role_"))
 async def process_role_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -122,14 +113,6 @@ async def process_role_callback(callback: types.CallbackQuery, state: FSMContext
     await callback.message.answer(f"📍 Вы выбрали: <b>{role}</b>. Куда едем?", reply_markup=get_cities_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.destination)
     await callback.answer()
-
-@dp.message(TaxiStates.choosing_role)
-async def process_role(message: types.Message, state: FSMContext):
-    # На случай если пользователь введет текст вручную
-    role = "водитель" if "ВОДИТЕЛЬ" in message.text.upper() else "пассажир"
-    await state.update_data(role=role)
-    await message.answer(f"📍 Вы — <b>{role}</b>. Куда едем?", reply_markup=get_cities_kb(), parse_mode="HTML")
-    await state.set_state(TaxiStates.destination)
 
 @dp.message(TaxiStates.destination)
 async def process_dest(message: types.Message, state: FSMContext):
@@ -172,12 +155,11 @@ async def process_phone(message: types.Message, state: FSMContext):
     await state.update_data(phone_number=phone)
     data = await state.get_data()
     user = message.from_user
-    user_link = f'<a href="tg://user?id={user.id}">{user.full_name}</a>'
     
+    # Форматирование текста для канала
     clean_phone = phone.replace(" ", "").replace("-", "")
     if not clean_phone.startswith('+'): clean_phone = '+' + clean_phone
     
-    # Жирный шрифт для всех ключевых полей
     role_name = "ВОДИТЕЛЬ" if data['role'] == "водитель" else "ПАССАЖИР"
     icon = "🚕" if data['role'] == "водитель" else "👤"
     user_label = "Водитель" if data['role'] == "водитель" else "Пассажир"
@@ -189,14 +171,17 @@ async def process_phone(message: types.Message, state: FSMContext):
     if data['role'] == "водитель":
         text += f"🚗 <b>Авто</b>: {data.get('car_model')}\n💰 <b>Цена</b>: {data.get('price')} сом\n"
     
-    # Кликабельный номер телефона
     text += (f"👥 <b>{'Мест' if data['role'] == 'водитель' else 'Человек'}</b>: {data['passenger_count']}\n"
              f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
-             f"👤 <b>{user_label}</b>: {user_link}")
+             f"👤 <b>{user_label}</b>: <a href='tg://user?id={user.id}'>{user.full_name}</a>")
 
     try:
-        # Обновление и подсчет заявок
-        existing = supabase.table("users").select("*").eq("user_id", user.id).execute()
+        # --- ЛОГИКА ОБНОВЛЕНИЯ И СЧЕТЧИКА (ПО РОЛИ) ---
+        existing = supabase.table("users").select("*") \
+            .eq("user_id", user.id) \
+            .eq("role", data['role']) \
+            .execute()
+        
         post_count = 1
         if existing.data:
             post_count = (existing.data[0].get("post_count") or 0) + 1
@@ -205,6 +190,7 @@ async def process_phone(message: types.Message, state: FSMContext):
                 try: await bot.delete_message(chat_id=CHANNEL_ID, message_id=old_mid)
                 except: pass
 
+        # Публикуем в канал
         msg = await bot.send_message(chat_id=CHANNEL_ID, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
 
         db_payload = {
@@ -215,23 +201,20 @@ async def process_phone(message: types.Message, state: FSMContext):
             "post_count": post_count, "created_at": datetime.datetime.now().isoformat()
         }
 
+        # Если запись для этой роли была — обновляем, если нет — создаем
         if existing.data:
-            supabase.table("users").update(db_payload).eq("user_id", user.id).execute()
+            supabase.table("users").update(db_payload).eq("user_id", user.id).eq("role", data['role']).execute()
         else:
             supabase.table("users").insert(db_payload).execute()
 
-        # Завершение с кнопкой "Главное меню"
-        await message.answer(f"✅ <b>Опубликовано!</b>\nОбъявление №{post_count}", parse_mode="HTML", reply_markup=get_start_inline_kb())
+        await message.answer(f"✅ <b>Опубликовано!</b>\nОбъявление №{post_count} в роли {data['role']}", parse_mode="HTML", reply_markup=get_start_inline_kb())
     except Exception as e:
         logging.error(f"Ошибка БД: {e}")
         await message.answer(f"❌ Ошибка: {e}")
     await state.clear()
 
 async def main():
-    # Настройка кнопки Меню для телефонов
-    await bot.set_my_commands([
-        types.BotCommand(command="start", description="🚀 Начать / Создать заявку")
-    ])
+    await bot.set_my_commands([types.BotCommand(command="start", description="🚀 Начать")])
     asyncio.create_task(cleanup_old_messages())
     await dp.start_polling(bot)
 
