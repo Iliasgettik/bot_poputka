@@ -230,7 +230,7 @@ async def process_phone(message: types.Message, state: FSMContext):
 async def main():
     # Настройка кнопки Меню для телефонов
     await bot.set_my_commands([
-        types.BotCommand(command="start", description="🚀 Начать / Создать заявку")
+        types.BotCommand(command="start", description="🚀 Начать / создать заявку")
     ])
     asyncio.create_task(cleanup_old_messages())
     await dp.start_polling(bot)
