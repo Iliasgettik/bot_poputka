@@ -8,7 +8,8 @@ API_TOKEN = os.getenv("API_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+raw_id = os.getenv("CHANNEL_ID")
+CHANNEL_ID = int(raw_id) if raw_id else None
 
 import logging
 import asyncio
