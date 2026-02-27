@@ -35,6 +35,7 @@ class TaxiStates(StatesGroup):
     choosing_role = State()
     destination = State()
     time = State()
+    waiting_for_custom_time = State()
     car_model = State()     
     price = State()         
     passenger_count = State()
@@ -149,6 +150,41 @@ async def process_dest(message: types.Message, state: FSMContext):
     await state.update_data(destination=message.text)
     await message.answer("🕒 Выберите <b>время</b> выезда:", reply_markup=get_time_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.time)
+
+# Вспомогательная функция для перехода к следующему шагу (чтобы не писать дважды)
+async def proceed_to_next_step(message: types.Message, state: FSMContext, time_value: str):
+    await state.update_data(time=time_value)
+    data = await state.get_data()
+    
+    if data['role'] == "водитель":
+        await message.answer("🚗 Введите <b>марку машины</b>:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+        await state.set_state(TaxiStates.car_model)
+    else:
+        await message.answer("👥 Сколько <b>человек</b> поедет?", reply_markup=get_numbers_kb(5), parse_mode="HTML")
+        await state.set_state(TaxiStates.passenger_count)
+
+# ОСНОВНОЙ ОБРАБОТЧИК ВРЕМЕНИ
+@dp.message(TaxiStates.time)
+async def process_time(message: types.Message, state: FSMContext):
+    if message.text == "⏳ Другое время":
+        await message.answer(
+            "📝 Введите время в свободном формате\n"
+            "(например: <i>'через 15 минут'</i>, <i>'в 20:30'</i> или <i>'утром'</i>):",
+            reply_markup=types.ReplyKeyboardRemove(),
+            parse_mode="HTML"
+        )
+        await state.set_state(TaxiStates.waiting_for_custom_time)
+        return
+
+    # Если выбрали кнопку с готовым временем
+    await proceed_to_next_step(message, state, message.text)
+
+# ОБРАБОТЧИК ДЛЯ СВОБОДНОГО ВВОДА ВРЕМЕНИ
+@dp.message(TaxiStates.waiting_for_custom_time)
+async def process_custom_time(message: types.Message, state: FSMContext):
+    # Принимаем любой текст, который ввел пользователь
+    await proceed_to_next_step(message, state, message.text)
+
 
 @dp.message(TaxiStates.time)
 async def process_time(message: types.Message, state: FSMContext):
