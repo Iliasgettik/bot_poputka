@@ -68,16 +68,29 @@ def get_cities_kb():
     kb = [[types.KeyboardButton(text="Талас"), types.KeyboardButton(text="Кировка")], [types.KeyboardButton(text="Бишкек")]]
     return types.ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
+
+
 def get_time_kb():
     builder = ReplyKeyboardBuilder()
-    now = datetime.datetime.now()
+    
+    # Создаем объект часового пояса Бишкека (UTC+6)
+    # Это универсальный способ, который не зависит от настроек сервера
+    tz_bishkek = datetime.timezone(datetime.timedelta(hours=6))
+    now = datetime.datetime.now(tz_bishkek)
+    
+    # Округляем до следующего часа
     start_time = now.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
+    
     for i in range(5):
+        # Генерируем следующие 5 часов
         slot = (start_time + datetime.timedelta(hours=i)).strftime("%H:00")
         builder.add(types.KeyboardButton(text=slot))
+    
     builder.adjust(3)
     builder.row(types.KeyboardButton(text="⏳ Другое время"))
     return builder.as_markup(resize_keyboard=True)
+
+
 
 def get_numbers_kb(count):
     builder = ReplyKeyboardBuilder()
