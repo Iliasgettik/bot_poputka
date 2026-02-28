@@ -133,7 +133,7 @@ async def process_dest(message: types.Message, state: FSMContext):
 @dp.message(TaxiStates.time)
 async def process_time(message: types.Message, state: FSMContext):
     if message.text == "⏳ Другое время":
-        await message.answer("📝 Введите время (например: 15:30 или 'через час'):", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+        await message.answer("📝 Введите время (например: 15:30, 'через час' или азыр):", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
         await state.set_state(TaxiStates.waiting_for_custom_time)
     else:
         await proceed_to_next_step(message, state, message.text)
@@ -157,7 +157,7 @@ async def process_price(message: types.Message, state: FSMContext):
 @dp.message(TaxiStates.passenger_count)
 async def process_p_count(message: types.Message, state: FSMContext):
     await state.update_data(passenger_count=message.text)
-    await message.answer("📱 Нажмите <b>«Отправить номер»</b>:", reply_markup=get_phone_kb(), parse_mode="HTML")
+    await message.answer("📱 Нажмите <b>«Отправить номер или введите в ручную»</b>:", reply_markup=get_phone_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.phone_number)
 
 @dp.message(TaxiStates.phone_number)
