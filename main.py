@@ -65,7 +65,7 @@ def get_start_inline_kb():
     return builder.as_markup()
 
 def get_cities_kb():
-    kb = [[types.KeyboardButton(text="Талас"), types.KeyboardButton(text="Кировка")], [types.KeyboardButton(text="Бишкек")]]
+    kb = [[types.KeyboardButton(text="Талас"), types.KeyboardButton(text="Айтматов")], [types.KeyboardButton(text="Бишкек")]]
     return types.ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 def get_time_kb():
