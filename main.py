@@ -21,6 +21,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 raw_id = os.getenv("CHANNEL_ID")
 CHANNEL_ID = int(raw_id) if raw_id else None
 
+# Настройка времени Бишкека для всего кода
+TZ_BISHKEK = datetime.timezone(datetime.timedelta(hours=6))
+
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=API_TOKEN)
@@ -31,6 +34,7 @@ class TaxiStates(StatesGroup):
     choosing_role = State()
     destination = State()
     time = State()
+    waiting_for_custom_time = State()
     car_model = State()     
     price = State()         
     passenger_count = State()
@@ -40,18 +44,14 @@ class TaxiStates(StatesGroup):
 async def cleanup_old_messages():
     while True:
         try:
-            # Вычисляем время 3 дня назад
-            three_days_ago = (datetime.datetime.now() - datetime.timedelta(days=3)).isoformat()
-            # Ищем старые записи, у которых есть message_id
+            three_days_ago = (datetime.datetime.now(TZ_BISHKEK) - datetime.timedelta(days=3)).isoformat()
             res = supabase.table("users").select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
             
             for record in res.data:
                 try: 
-                    # Удаляем сообщение из канала
                     await bot.delete_message(chat_id=CHANNEL_ID, message_id=record["message_id"])
                 except: 
                     pass
-                # Обнуляем message_id в базе, чтобы не пытаться удалить снова
                 supabase.table("users").update({"message_id": None}).eq("id", record["id"]).execute()
         except Exception as e:
             logging.error(f"Ошибка очистки: {e}")
@@ -66,12 +66,12 @@ def get_start_inline_kb():
     return builder.as_markup()
 
 def get_cities_kb():
-    kb = [[types.KeyboardButton(text="Талас"), types.KeyboardButton(text="Кировка")], [types.KeyboardButton(text="Бишкек")]]
+    kb = [[types.KeyboardButton(text="Талас"), types.KeyboardButton(text="Айтматов")], [types.KeyboardButton(text="Бишкек")]]
     return types.ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 def get_time_kb():
     builder = ReplyKeyboardBuilder()
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(TZ_BISHKEK)
     start_time = now.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
     for i in range(5):
         slot = (start_time + datetime.timedelta(hours=i)).strftime("%H:00")
@@ -94,8 +94,19 @@ def get_phone_kb():
 
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="➕ Создать объявление", url=f"https://t.me/{(await bot.get_me()).username}?start=go"))
+    builder.row(types.InlineKeyboardButton(text="➕ Создать объявление", url="https://t.me/poputka_24_bot?start=go"))
     return builder.as_markup()
+
+# --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ---
+async def proceed_to_next_step(message: types.Message, state: FSMContext, time_value: str):
+    await state.update_data(time=time_value)
+    data = await state.get_data()
+    if data['role'] == "водитель":
+        await message.answer("🚗 Введите <b>марку машины</b>:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+        await state.set_state(TaxiStates.car_model)
+    else:
+        await message.answer("👥 Сколько <b>человек</b> поедет?", reply_markup=get_numbers_kb(5), parse_mode="HTML")
+        await state.set_state(TaxiStates.passenger_count)
 
 # --- ОБРАБОТЧИКИ ---
 
@@ -122,14 +133,15 @@ async def process_dest(message: types.Message, state: FSMContext):
 
 @dp.message(TaxiStates.time)
 async def process_time(message: types.Message, state: FSMContext):
-    await state.update_data(time=message.text)
-    data = await state.get_data()
-    if data['role'] == "водитель":
-        await message.answer("🚗 Введите <b>марку машины</b>:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
-        await state.set_state(TaxiStates.car_model)
+    if message.text == "⏳ Другое время":
+        await message.answer("📝 Введите время (например: 15:30, 'через час' или азыр):", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+        await state.set_state(TaxiStates.waiting_for_custom_time)
     else:
-        await message.answer("👥 Сколько <b>человек</b> поедет?", reply_markup=get_numbers_kb(5), parse_mode="HTML")
-        await state.set_state(TaxiStates.passenger_count)
+        await proceed_to_next_step(message, state, message.text)
+
+@dp.message(TaxiStates.waiting_for_custom_time)
+async def process_custom_time(message: types.Message, state: FSMContext):
+    await proceed_to_next_step(message, state, message.text)
 
 @dp.message(TaxiStates.car_model)
 async def process_car(message: types.Message, state: FSMContext):
@@ -146,7 +158,7 @@ async def process_price(message: types.Message, state: FSMContext):
 @dp.message(TaxiStates.passenger_count)
 async def process_p_count(message: types.Message, state: FSMContext):
     await state.update_data(passenger_count=message.text)
-    await message.answer("📱 Нажмите кнопку ниже <b>«Отправить мой номер»</b>:", reply_markup=get_phone_kb(), parse_mode="HTML")
+    await message.answer("📱 Нажмите <b>«Отправить номер или введите в ручную»</b>:", reply_markup=get_phone_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.phone_number)
 
 @dp.message(TaxiStates.phone_number)
@@ -162,9 +174,9 @@ async def process_phone(message: types.Message, state: FSMContext):
     
     role_name = "ВОДИТЕЛЬ" if data['role'] == "водитель" else "ПАССАЖИР"
     icon = "🚕" if data['role'] == "водитель" else "👤"
-    user_label = "Водитель" if data['role'] == "водитель" else "Пассажир"
     
-    text = (f"{icon} <b>НОВАЯ ЗАЯВКА ({role_name})</b>\n\n"
+    # Текст без фразы "НОВАЯ ЗАЯВКА"
+    text = (f"{icon} <b>{role_name}</b>\n\n"
             f"📍 <b>Куда</b>: {data['destination']}\n"
             f"🕒 <b>Время</b>: {data['time']}\n")
     
@@ -173,43 +185,29 @@ async def process_phone(message: types.Message, state: FSMContext):
     
     text += (f"👥 <b>{'Мест' if data['role'] == 'водитель' else 'Человек'}</b>: {data['passenger_count']}\n"
              f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
-             f"👤 <b>{user_label}</b>: <a href='tg://user?id={user.id}'>{user.full_name}</a>")
+             f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user.id}'>{user.full_name}</a>")
 
     try:
-        # --- ЛОГИКА ОБНОВЛЕНИЯ И СЧЕТЧИКА (ПО РОЛИ) ---
-        existing = supabase.table("users").select("*") \
-            .eq("user_id", user.id) \
-            .eq("role", data['role']) \
-            .execute()
-        
-        post_count = 1
-        if existing.data:
-            post_count = (existing.data[0].get("post_count") or 0) + 1
-            old_mid = existing.data[0].get("message_id")
-            if old_mid:
-                try: await bot.delete_message(chat_id=CHANNEL_ID, message_id=old_mid)
-                except: pass
+        # Считаем посты для счетчика
+        count_res = supabase.table("users").select("id", count="exact").eq("user_id", user.id).eq("role", data['role']).execute()
+        post_count = (count_res.count or 0) + 1
 
-        # Публикуем в канал
+        # Отправляем новое сообщение (БЕЗ УДАЛЕНИЯ старых)
         msg = await bot.send_message(chat_id=CHANNEL_ID, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
 
+        # ВСЕГДА INSERT новой строки
         db_payload = {
             "user_id": user.id, "role": data['role'], "destination": data['destination'],
             "time": data['time'], "passenger_count": data['passenger_count'], 
             "phone_num": phone, "car_model": data.get("car_model"), 
             "price": data.get("price"), "message_id": msg.message_id,
-            "post_count": post_count, "created_at": datetime.datetime.now().isoformat()
+            "post_count": post_count, "created_at": datetime.datetime.now(TZ_BISHKEK).isoformat()
         }
+        supabase.table("users").insert(db_payload).execute()
 
-        # Если запись для этой роли была — обновляем, если нет — создаем
-        if existing.data:
-            supabase.table("users").update(db_payload).eq("user_id", user.id).eq("role", data['role']).execute()
-        else:
-            supabase.table("users").insert(db_payload).execute()
-
-        await message.answer(f"✅ <b>Опубликовано!</b>\nОбъявление №{post_count} в роли {data['role']}", parse_mode="HTML", reply_markup=get_start_inline_kb())
+        await message.answer(f"✅ <b>Опубликовано!</b>\nОбъявление №{post_count}", parse_mode="HTML", reply_markup=get_start_inline_kb())
     except Exception as e:
-        logging.error(f"Ошибка БД: {e}")
+        logging.error(f"Ошибка: {e}")
         await message.answer(f"❌ Ошибка: {e}")
     await state.clear()
 
