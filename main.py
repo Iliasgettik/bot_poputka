@@ -20,6 +20,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 raw_id = os.getenv("CHANNEL_ID")
 CHANNEL_ID = int(raw_id) if raw_id else None
+TAXI_TABLE = os.getenv("TABLE_NAME")
+
+
 
 # Настройка времени Бишкека для всего кода
 TZ_BISHKEK = datetime.timezone(datetime.timedelta(hours=6))
@@ -45,14 +48,14 @@ async def cleanup_old_messages():
     while True:
         try:
             three_days_ago = (datetime.datetime.now(TZ_BISHKEK) - datetime.timedelta(days=3)).isoformat()
-            res = supabase.table("users").select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
+            res = supabase.table(TAXI_TABLE).select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
             
             for record in res.data:
                 try: 
                     await bot.delete_message(chat_id=CHANNEL_ID, message_id=record["message_id"])
                 except: 
                     pass
-                supabase.table("users").update({"message_id": None}).eq("id", record["id"]).execute()
+                supabase.table(TAXI_TABLE).update({"message_id": None}).eq("id", record["id"]).execute()
         except Exception as e:
             logging.error(f"Ошибка очистки: {e}")
         await asyncio.sleep(3600) # Проверка каждый час
@@ -189,7 +192,7 @@ async def process_phone(message: types.Message, state: FSMContext):
 
     try:
         # Считаем посты для счетчика
-        count_res = supabase.table("users").select("id", count="exact").eq("user_id", user.id).eq("role", data['role']).execute()
+        count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user.id).eq("role", data['role']).execute()
         post_count = (count_res.count or 0) + 1
 
         # Отправляем новое сообщение (БЕЗ УДАЛЕНИЯ старых)
@@ -203,7 +206,7 @@ async def process_phone(message: types.Message, state: FSMContext):
             "price": data.get("price"), "message_id": msg.message_id,
             "post_count": post_count, "created_at": datetime.datetime.now(TZ_BISHKEK).isoformat()
         }
-        supabase.table("users").insert(db_payload).execute()
+        supabase.table(TAXI_TABLE).insert(db_payload).execute()
 
         await message.answer(f"✅ <b>Опубликовано!</b>\nОбъявление №{post_count}", parse_mode="HTML", reply_markup=get_start_inline_kb())
     except Exception as e:
