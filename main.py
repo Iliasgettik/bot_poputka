@@ -106,7 +106,7 @@ async def proceed_to_next_step(message: types.Message, state: FSMContext, time_v
     await state.update_data(time=time_value)
     data = await state.get_data()
     if data['role'] == "айдоочу":
-        await message.answer("🚗 Введите <b>марку машины</b>:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+        await message.answer("🚗 <b>Унаанын маркасын</b> киргизиңиз:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
         await state.set_state(TaxiStates.car_model)
     else:
         await message.answer("👥 Канча <b>адам</b> барат?", reply_markup=get_numbers_kb(5), parse_mode="HTML")
