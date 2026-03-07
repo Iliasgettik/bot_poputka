@@ -70,7 +70,7 @@ def get_start_inline_kb():
     return builder.as_markup()
 
 def get_cities_kb():
-    kb = [[types.KeyboardButton(text="Талас"), types.KeyboardButton(text="Айтматов")], [types.KeyboardButton(text="Бишкек")]]
+    kb = [[types.KeyboardButton(text="Таласка"), types.KeyboardButton(text="Айтматовко")], [types.KeyboardButton(text="Бишкекке")]]
     return types.ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 def get_time_kb():
@@ -106,7 +106,7 @@ async def proceed_to_next_step(message: types.Message, state: FSMContext, time_v
     await state.update_data(time=time_value)
     data = await state.get_data()
     if data['role'] == "айдоочу":
-        await message.answer("🚗 <b>Унаанын маркасын киргизиңиз</b>:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+        await message.answer("🚗 Унаанын маркасын киргизиңиз:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
         await state.set_state(TaxiStates.car_model)
     else:
         await message.answer("👥 <b>Канча адам барат?</b>", reply_markup=get_numbers_kb(5), parse_mode="HTML")
