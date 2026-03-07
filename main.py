@@ -98,7 +98,7 @@ def get_phone_kb():
 
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="➕ Жарнама түзүңүз", url=BOT_LINK))
+    builder.row(types.InlineKeyboardButton(text="➕ Жарыя түзүңүз", url=BOT_LINK))
     return builder.as_markup()
 
 # --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ---
@@ -209,7 +209,7 @@ async def process_phone(message: types.Message, state: FSMContext):
         }
         supabase.table(TAXI_TABLE).insert(db_payload).execute()
 
-        await message.answer(f"✅ <b>Жарыяланды!</b>\nЖарнама №{post_count}", parse_mode="HTML", reply_markup=get_start_inline_kb())
+        await message.answer(f"✅ <b>Жарыяланды!</b>\nЖарыя №{post_count}", parse_mode="HTML", reply_markup=get_start_inline_kb())
     except Exception as e:
         logging.error(f"Ошибка: {e}")
         await message.answer(f"❌ Ошибка: {e}")
