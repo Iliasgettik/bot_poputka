@@ -150,7 +150,7 @@ async def process_custom_time(message: types.Message, state: FSMContext):
 @dp.message(TaxiStates.car_model)
 async def process_car(message: types.Message, state: FSMContext):
     await state.update_data(car_model=message.text)
-    await message.answer("💰 <b>Баасын/b> көрсөтүңүз (сом):", parse_mode="HTML")
+    await message.answer("💰 <b>Баасын</b> көрсөтүңүз (сом):", parse_mode="HTML")
     await state.set_state(TaxiStates.price)
 
 @dp.message(TaxiStates.price)
