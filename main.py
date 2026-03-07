@@ -21,6 +21,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 raw_id = os.getenv("CHANNEL_ID")
 CHANNEL_ID = int(raw_id) if raw_id else None
 TAXI_TABLE = os.getenv("TABLE_NAME")
+BOT_LINK = os.getenv("BOT_START_LINK")
 
 
 
