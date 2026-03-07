@@ -98,7 +98,7 @@ def get_phone_kb():
 
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="➕ Создать объявление", url="https://t.me/poputka_24_bot?start=go"))
+    builder.row(types.InlineKeyboardButton(text="➕ Создать объявление", url=BOT_LINK))
     return builder.as_markup()
 
 # --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ---
