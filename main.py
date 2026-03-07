@@ -105,11 +105,11 @@ def get_channel_publish_kb():
 async def proceed_to_next_step(message: types.Message, state: FSMContext, time_value: str):
     await state.update_data(time=time_value)
     data = await state.get_data()
-    if data['role'] == "водитель":
+    if data['role'] == "айдоочу":
         await message.answer("🚗 Введите <b>марку машины</b>:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
         await state.set_state(TaxiStates.car_model)
     else:
-        await message.answer("👥 Сколько <b>человек</b> поедет?", reply_markup=get_numbers_kb(5), parse_mode="HTML")
+        await message.answer("👥 Канча <b>адам</b> барат?", reply_markup=get_numbers_kb(5), parse_mode="HTML")
         await state.set_state(TaxiStates.passenger_count)
 
 # --- ОБРАБОТЧИКИ ---
