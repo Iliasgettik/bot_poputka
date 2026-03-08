@@ -235,6 +235,9 @@ async def process_phone(message: types.Message, state: FSMContext):
 async def main():
     await bot.set_my_commands([types.BotCommand(command="start", description="🚀 Баштоо")])
     asyncio.create_task(cleanup_old_messages())
+
+    # 2. ЗАПУСК ПОГОДЫ (Вот эту строчку мы добавили!)
+    asyncio.create_task(weather_background_task(bot, CHANNEL_ID))
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
