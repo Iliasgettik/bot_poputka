@@ -12,6 +12,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from supabase import create_client, Client
 from weather import weather_background_task, build_weather_message
+from auto_post import send_instruction_post
 # --- КОНФИГУРАЦИЯ ---
 load_dotenv()
  
