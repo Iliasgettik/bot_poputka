@@ -10,6 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from supabase import create_client, Client
+from weather import weather_background_task
 
 # --- КОНФИГУРАЦИЯ ---
 load_dotenv()
