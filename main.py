@@ -238,6 +238,8 @@ async def main():
 
     # 2. ЗАПУСК ПОГОДЫ (Вот эту строчку мы добавили!)
     asyncio.create_task(weather_background_task(bot, CHANNEL_ID))
+    # запуск интсрукции
+    asyncio.create_task(send_instruction_post(bot, CHANNEL_ID))
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
