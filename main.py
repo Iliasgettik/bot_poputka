@@ -123,7 +123,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     # Железобетонная проверка: просто ищем фразу в тексте сообщения
     if message.text and "show_weather" in message.text:
         try:
-            status_msg = await message.answer("⏳ Собираю данные о погоде...") 
+            status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...") 
             
             # Подтягиваем погоду
             from weather import build_weather_message
