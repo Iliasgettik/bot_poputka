@@ -13,7 +13,7 @@ async def send_instruction_post(bot: Bot, channel_id: int):
             # 1. Текст под фото (инструкция)
             caption_text = (
                 "📢 <b>Көңүл буруңуз!</b>\n\n"
-                "Группага жазууга болбойт. Жарыя берүү үчүн төмөндөгү <b>\"Жарыя түзүңүз\"</b> баскычын басыңыз 👇"
+                "Жарыя берүү үчүн төмөндөгү <b>\"Жарыя түзүңүз\"</b> баскычын басыңыз 👇"
             )
 
             # 2. Кнопка под фото
@@ -38,4 +38,4 @@ async def send_instruction_post(bot: Bot, channel_id: int):
             print(f"❌ Ошибка при отправке инструкции: {e}")
 
         # Пауза 1 час (3600 секунд)
-        await asyncio.sleep(30)
+        await asyncio.sleep(1800)
