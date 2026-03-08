@@ -119,12 +119,23 @@ async def proceed_to_next_step(message: types.Message, state: FSMContext, time_v
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject = None):
     await state.clear()
-# Если юзер перешел по кнопке "Погода" из канала
+    
+    # 1. Проверяем, перешел ли юзер по кнопке Погоды
     if command and command.args == "show_weather":
-        status_msg = await message.answer("⏳ Собираю данные о погоде...")     
-        weather_text = await build_weather_message()
-        await status_msg.edit_text(weather_text, parse_mode="HTML")
+        try:
+            status_msg = await message.answer("⏳ Собираю данные о погоде...") 
+            
+            # Импортируем функцию прямо здесь для 100% надежности
+            from weather import build_weather_message
+            
+            weather_text = await build_weather_message()
+            await status_msg.edit_text(weather_text, parse_mode="HTML")
+        except Exception as e:
+            # Если будет ошибка, бот напишет ее тебе, а не просто зависнет
+            await message.answer(f"❌ Ошибка при загрузке погоды: {e}")
+            logging.error(f"Ошибка погоды: {e}")
 
+    # 2. Показываем главное меню (оно покажется в любом случае)
     welcome_text = "👋 <b>Саламатсызбы!</b>\n\nЖарыя берүү үчүн төмөндөн ролуңузду тандаңыз:"
     await message.answer(welcome_text, reply_markup=get_start_inline_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.choosing_role)
