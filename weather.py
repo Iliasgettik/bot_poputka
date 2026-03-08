@@ -1,3 +1,21 @@
+WEATHER_TRANSLATIONS = {
+    "ясно": "Ачык",
+    "пасмурно": "Булуттуу",
+    "облачно с прояснениями": "Ала булуттуу",
+    "небольшая облачность": "Бир аз булуттуу",
+    "переменная облачность": "Өзгөрүлмө булуттуу",
+    "небольшой дождь": "Бир аз жамгыр",
+    "дождь": "Жамгыр",
+    "сильный дождь": "Катуу жамгыр",
+    "снег": "Кар",
+    "небольшой снег": "Бир аз кар",
+    "мокрый снег": "Жамгыр аралаш кар",
+    "гроза": "Күн күркүрөйт",
+    "туман": "Туман",
+    "дымка": "Мунар"
+}
+
+
 import os
 import asyncio
 import aiohttp
@@ -21,12 +39,12 @@ LOCATIONS = [
     },
     {
         "icon": "⛰", 
-        "name": "Перевал Тоо-Ашуу / Тоо-Ашуу ашуусу", 
+        "name": "Тоо-Ашуу ашуусу", 
         "query": "lat=42.318&lon=73.812" # Координаты Тоо-Ашуу
     },
     {
         "icon": "⛰", 
-        "name": "Перевал Отмок / Өтмөк ашуусу", 
+        "name": "Өтмөк ашуусу", 
         "query": "lat=42.288&lon=73.170" # Координаты Отмок
     }
 ]
@@ -53,7 +71,7 @@ async def fetch_weather(session, location):
         return None
 
 async def build_weather_message():
-    message_text = "🌤 <b>Прогноз погоды на сегодня / Бүгүнкү аба ырайы</b>\n\n"
+    message_text = "🌤 <b>Бүгүнкү аба ырайы</b>\n\n"
     
     async with aiohttp.ClientSession() as session:
         for loc in LOCATIONS:
@@ -73,9 +91,9 @@ async def build_weather_message():
                     f"{loc['icon']} <b>{loc['name']}:</b>\n"
                     f"{emoji} {desc}\n"
                     f"🌡 Температура: {temp}°C\n"
-                    f"🌡 Ощущается как: {feels_like}°C\n"
-                    f"💧 Влажность: {humidity}%\n"
-                    f"💨 Ветер: {wind} м/с\n\n"
+                    f"🌡 Сезилиши: {feels_like}°C\n"
+                    f"💧 Нымдуулук: {humidity}%\n"
+                    f"💨 Шамал: {wind} м/с\n\n"
                 )
             else:
                 message_text += f"{loc['icon']} <b>{loc['name']}:</b>\n❌ Ошибка получения данных\n\n"
