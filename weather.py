@@ -56,26 +56,21 @@ async def build_weather_message():
             data = await fetch_weather(session, loc)
             
             if data:
-                # ВОТ ЗДЕСЬ МАГИЯ ПЕРЕВОДА:
-                # 1. Берем русское слово с сервера, делаем маленькими буквами и убираем лишние пробелы
+                # Перевод описания
                 raw_desc = data['weather'][0]['description'].lower().strip()
-                # 2. Ищем его в словаре. Если нет - оставляем как было.
                 desc = WEATHER_TRANSLATIONS.get(raw_desc, raw_desc.capitalize())
                 
                 weather_main = data['weather'][0]['main']
                 emoji = get_weather_emoji(weather_main)
                 
+                # Оставляем только температуру и ветер
                 temp = round(data['main']['temp'])
-                feels_like = round(data['main']['feels_like'])
-                humidity = data['main']['humidity']
                 wind = round(data['wind']['speed'])
                 
                 message_text += (
                     f"{loc['icon']} <b>{loc['name']}:</b>\n"
                     f"{emoji} {desc}\n"
                     f"🌡 Температура: {temp}°C\n"
-                    f"🌡 Сезилиши: {feels_like}°C\n"
-                    f"💧 Нымдуулук: {humidity}%\n"
                     f"💨 Шамал: {wind} м/с\n\n"
                 )
             else:
