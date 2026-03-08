@@ -97,4 +97,4 @@ async def weather_background_task(bot: Bot, channel_id: int):
             logging.error(f"❌ Ошибка при отправке погоды: {e}")
             
         # Пауза на 2 часа (7200 секунд)
-        await asyncio.sleep(7200)
+        await asyncio.sleep(30)
