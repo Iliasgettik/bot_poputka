@@ -1,3 +1,4 @@
+from aiogram.filters import Command, CommandObject  # <-- ДОБАВЛЕН CommandObject
 import os
 import logging
 import asyncio
@@ -10,11 +11,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from supabase import create_client, Client
-from weather import weather_background_task
-
+from weather import weather_background_task, build_weather_message
 # --- КОНФИГУРАЦИЯ ---
 load_dotenv()
-
+ 
 API_TOKEN = os.getenv("API_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -99,6 +99,7 @@ def get_phone_kb():
 
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
     builder.row(types.InlineKeyboardButton(text="➕ Жарыя түзүңүз", url=BOT_LINK))
     return builder.as_markup()
 
@@ -116,8 +117,14 @@ async def proceed_to_next_step(message: types.Message, state: FSMContext, time_v
 # --- ОБРАБОТЧИКИ ---
 
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
+async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject = None):
     await state.clear()
+# Если юзер перешел по кнопке "Погода" из канала
+    if command and command.args == "show_weather":
+        status_msg = await message.answer("⏳ Собираю данные о погоде...")     
+        weather_text = await build_weather_message()
+        await status_msg.edit_text(weather_text, parse_mode="HTML")
+
     welcome_text = "👋 <b>Саламатсызбы!</b>\n\nЖарыя берүү үчүн төмөндөн ролуңузду тандаңыз:"
     await message.answer(welcome_text, reply_markup=get_start_inline_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.choosing_role)
