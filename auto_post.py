@@ -38,4 +38,4 @@ async def send_instruction_post(bot: Bot, channel_id: int):
             print(f"❌ Ошибка при отправке инструкции: {e}")
 
         # Пауза 1 час (3600 секунд)
-        await asyncio.sleep(1800)
+        await asyncio.sleep(3600)
