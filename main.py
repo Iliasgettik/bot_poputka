@@ -25,7 +25,6 @@ TAXI_TABLE = os.getenv("TABLE_NAME")
 BOT_LINK = os.getenv("BOT_START_LINK")
 
 
-
 # Настройка времени Бишкека для всего кода
 TZ_BISHKEK = datetime.timezone(datetime.timedelta(hours=6))
 
