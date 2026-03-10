@@ -224,15 +224,14 @@ async def process_phone(message: types.Message, state: FSMContext):
     await state.update_data(phone_number=phone)
     data = await state.get_data()
     user = message.from_user
-    
+    role = data.get('role')
+
     # Форматирование текста для канала
     clean_phone = phone.replace(" ", "").replace("-", "")
     if not clean_phone.startswith('+'): clean_phone = '+' + clean_phone
     
 # Логика формирования текста
-    if data['role'] == "посылка":
-        role_name = "ПОСЫЛКА"
-        icon = "📦"
+    if role == "посылка":
         text = (f"{icon} <b>{role_name}</b>\n\n"
                 f"📤 <b>Каяктан</b>: {data.get('origin')}\n"
                 f"📥 <b>Каякка</b>: {data['destination']}\n"
@@ -246,12 +245,15 @@ async def process_phone(message: types.Message, state: FSMContext):
         text = (f"{icon} <b>{role_name}</b>\n\n"
             f"📍 <b>Каякка</b>: {data['destination']}\n"
             f"🕒 <b>Убакыт</b>: {data['time']}\n")
-    if data['role'] == "айдоочу":
-        text += f"🚗 <b>Унаа</b>: {data.get('car_model')}\n💰 <b>Баасы</b>: {data.get('price')} сом\n"
-    text += (f"👥 <b>{'Орун' if data['role'] == 'айдоочу' else 'Адам'}</b>: {data['passenger_count']}\n"
-             f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
-             f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user.id}'>{user.full_name}</a>")
-
+        
+        if role == "айдоочу":
+            text += f"🚗 <b>Унаа</b>: {data.get('car_model')}\n💰 <b>Баасы</b>: {data.get('price')} сом\n"
+   
+        label = 'Орун' if role == 'айдоочу' else 'Адам'
+        text += (f"👥 <b>{label}</b>: {data.get('passenger_count', '1')}\n"
+                 f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
+                 f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user.id}'>{user.full_name}</a>")
+    
     try:
         # Считаем посты для счетчика
         count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user.id).eq("role", data['role']).execute()
