@@ -38,7 +38,9 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 class TaxiStates(StatesGroup):
     choosing_role = State()
+    origin = State()         # Откуда (для посылки)
     destination = State()
+    delivery_type = State()  # Тип доставки (для посылки)
     time = State()
     waiting_for_custom_time = State()
     car_model = State()     
@@ -69,11 +71,18 @@ def get_start_inline_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🚕 Айдоочу", callback_data="set_role_айдоочу"))
     builder.row(types.InlineKeyboardButton(text="👤 Жүргүнчү", callback_data="set_role_жүргүнчү"))
+    builder.row(types.InlineKeyboardButton(text="📦 Посылка жөнөтүү", callback_data="set_role_посылка"))
     return builder.as_markup()
 
 def get_cities_kb():
     kb = [[types.KeyboardButton(text="Таласка"), types.KeyboardButton(text="Айтматовко")], [types.KeyboardButton(text="Бишкекке")]]
     return types.ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+def get_delivery_type_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.row(types.KeyboardButton(text="📦 Өзүм жеткирип берем"))
+    builder.row(types.KeyboardButton(text="🏠 Үйдөн алып кетиш керек"))
+    return builder.as_markup(resize_keyboard=True)
 
 def get_time_kb():
     builder = ReplyKeyboardBuilder()
@@ -150,8 +159,20 @@ async def process_role_callback(callback: types.CallbackQuery, state: FSMContext
 @dp.message(TaxiStates.destination)
 async def process_dest(message: types.Message, state: FSMContext):
     await state.update_data(destination=message.text)
-    await message.answer("🕒 Чыгуу <b>убактысын</b> тандаңыз:", reply_markup=get_time_kb(), parse_mode="HTML")
-    await state.set_state(TaxiStates.time)
+    data = await state.get_data()
+    
+    if data['role'] == "посылка":
+        await message.answer("📦 <b>Посылканы кандай бересиз?</b>", reply_markup=get_delivery_type_kb(), parse_mode="HTML")
+        await state.set_state(TaxiStates.delivery_type)
+    else:
+        await message.answer("🕒 Чыгуу <b>убактысын</b> тандаңыз:", reply_markup=get_time_kb(), parse_mode="HTML")
+        await state.set_state(TaxiStates.time)
+
+@dp.message(TaxiStates.delivery_type)
+async def process_delivery_type(message: types.Message, state: FSMContext):
+    await state.update_data(delivery_type=message.text)
+    await message.answer("🕒 <b>Качан / Саат канчада?</b> (Мисалы: Бүгүн 17:00)", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+    await state.set_state(TaxiStates.waiting_for_custom_time)
 
 @dp.message(TaxiStates.time)
 async def process_time(message: types.Message, state: FSMContext):
@@ -194,17 +215,25 @@ async def process_phone(message: types.Message, state: FSMContext):
     clean_phone = phone.replace(" ", "").replace("-", "")
     if not clean_phone.startswith('+'): clean_phone = '+' + clean_phone
     
-    role_name = "АЙДООЧУ" if data['role'] == "айдоочу" else "ЖҮРГҮНЧҮ"
-    icon = "🚕" if data['role'] == "айдоочу" else "👤"
-    
-    # Текст без фразы "НОВАЯ ЗАЯВКА"
-    text = (f"{icon} <b>{role_name}</b>\n\n"
+# Логика формирования текста
+    if data['role'] == "посылка":
+        role_name = "ПОСЫЛКА"
+        icon = "📦"
+        text = (f"{icon} <b>{role_name}</b>\n\n"
+                f"📤 <b>Каяктан</b>: {data.get('origin')}\n"
+                f"📥 <b>Каякка</b>: {data['destination']}\n"
+                f"🚚 <b>Түрү</b>: {data.get('delivery_type')}\n"
+                f"🕒 <b>Убакыт</b>: {data['time']}\n"
+                f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
+                f"👤 <b>Жөнөтүүчү</b>: <a href='tg://user?id={user.id}'>{user.full_name}</a>")
+    else:
+        role_name = "АЙДООЧУ" if data['role'] == "айдоочу" else "ЖҮРГҮНЧҮ"
+        icon = "🚕" if data['role'] == "айдоочу" else "👤"
+        text = (f"{icon} <b>{role_name}</b>\n\n"
             f"📍 <b>Каякка</b>: {data['destination']}\n"
             f"🕒 <b>Убакыт</b>: {data['time']}\n")
-    
     if data['role'] == "айдоочу":
         text += f"🚗 <b>Унаа</b>: {data.get('car_model')}\n💰 <b>Баасы</b>: {data.get('price')} сом\n"
-    
     text += (f"👥 <b>{'Орун' if data['role'] == 'айдоочу' else 'Адам'}</b>: {data['passenger_count']}\n"
              f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
              f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user.id}'>{user.full_name}</a>")
