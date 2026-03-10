@@ -276,7 +276,7 @@ async def process_phone(message: types.Message, state: FSMContext):
 
         await message.answer(f"✅ <b>Жарыяланды!</b>\nЖарыя №{post_count}", parse_mode="HTML", reply_markup=get_start_inline_kb())
     except Exception as e:
-        logging.error(f"Ошибка: {e}", exc_info=True) 
+        logging.error(f"Ошибка: {e}") 
         await message.answer(f"❌ Ошибка: {e}")
     await state.clear()
 
