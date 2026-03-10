@@ -265,11 +265,17 @@ async def process_phone(message: types.Message, state: FSMContext):
 
         # ВСЕГДА INSERT новой строки
         db_payload = {
-            "user_id": user.id, "role": data['role'], "destination": data['destination'],
-            "time": data['time'], "passenger_count": data.get('passenger_count'), 
-            "phone_num": phone, "car_model": data.get("car_model"), 
-            "price": data.get("price"), "message_id": msg.message_id,
-            "post_count": post_count, "created_at": datetime.datetime.now(TZ_BISHKEK).isoformat()
+            "user_id": user.id, 
+            "role": role, 
+            "destination": data.get('destination'),
+            "time": data.get('time'), 
+            "passenger_count": data.get('passenger_count'), 
+            "phone_num": phone, 
+            "car_model": data.get("car_model") if role != "посылка" else f"Откуда: {data.get('origin')}", 
+            "price": data.get("price") if role != "посылка" else data.get("delivery_type"), 
+            "message_id": msg.message_id,
+            "post_count": post_count, 
+            "created_at": datetime.datetime.now(TZ_BISHKEK).isoformat()
         }
         supabase.table(TAXI_TABLE).insert(db_payload).execute()
 
