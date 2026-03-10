@@ -8,7 +8,6 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from supabase import create_client, Client
 from weather import weather_background_task, build_weather_message
@@ -267,7 +266,7 @@ async def process_phone(message: types.Message, state: FSMContext):
         # ВСЕГДА INSERT новой строки
         db_payload = {
             "user_id": user.id, "role": data['role'], "destination": data['destination'],
-            "time": data['time'], "passenger_count": data['passenger_count'], 
+            "time": data['time'], "passenger_count": data.get('passenger_count'), 
             "phone_num": phone, "car_model": data.get("car_model"), 
             "price": data.get("price"), "message_id": msg.message_id,
             "post_count": post_count, "created_at": datetime.datetime.now(TZ_BISHKEK).isoformat()
