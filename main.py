@@ -109,7 +109,7 @@ def get_phone_kb():
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
-    builder.row(types.InlineKeyboardButton(text="➕ Жарыя түзүңүз", url=BOT_LINK))
+    builder.row(types.InlineKeyboardButton(text="➕ Жарыя түзүңүз", url=f"{BOT_LINK}?start=new_post"))
     return builder.as_markup()
 
 # --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ---
