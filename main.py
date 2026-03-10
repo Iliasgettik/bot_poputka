@@ -117,12 +117,18 @@ def get_channel_publish_kb():
 async def proceed_to_next_step(message: types.Message, state: FSMContext, time_value: str):
     await state.update_data(time=time_value)
     data = await state.get_data()
+    role = data.get('role')
+
     if data['role'] == "айдоочу":
         await message.answer("🚗 <b>Унаанын маркасын</b> киргизиңиз:", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
         await state.set_state(TaxiStates.car_model)
-    else:
+    elif role == "жүргүнчү":
         await message.answer("👥 Канча <b>адам</b> барат?", reply_markup=get_numbers_kb(5), parse_mode="HTML")
         await state.set_state(TaxiStates.passenger_count)
+    elif role == "посылка":
+        # ДЛЯ ПОСЫЛКИ СРАЗУ ПЕРЕХОДИМ К НОМЕРУ ТЕЛЕФОНА
+        await message.answer("📱 <b>«Номерди жөнөтүү баскычын басыңыз же өзүңүз жазыңыз»</b>:", reply_markup=get_phone_kb(), parse_mode="HTML")
+        await state.set_state(TaxiStates.phone_number)
 
 # --- ОБРАБОТЧИКИ ---
 
@@ -134,11 +140,8 @@ async def cmd_start(message: types.Message, state: FSMContext):
     if message.text and "show_weather" in message.text:
         try:
             status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...") 
-            
-            # Подтягиваем погоду
             from weather import build_weather_message
             weather_text = await build_weather_message()
-            
             await status_msg.edit_text(weather_text, parse_mode="HTML")
         except Exception as e:
             await message.answer(f"❌ Ошибка при загрузке погоды: {e}")
