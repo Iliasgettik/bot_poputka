@@ -232,6 +232,8 @@ async def process_phone(message: types.Message, state: FSMContext):
     
 # Логика формирования текста
     if role == "посылка":
+        icon = "📦"          # ✅ добавить
+        role_name = "ПОСЫЛКА"  # ✅ добавить
         text = (f"{icon} <b>{role_name}</b>\n\n"
                 f"📤 <b>Каяктан</b>: {data.get('origin')}\n"
                 f"📥 <b>Каякка</b>: {data['destination']}\n"
@@ -274,7 +276,7 @@ async def process_phone(message: types.Message, state: FSMContext):
 
         await message.answer(f"✅ <b>Жарыяланды!</b>\nЖарыя №{post_count}", parse_mode="HTML", reply_markup=get_start_inline_kb())
     except Exception as e:
-        logging.error(f"Ошибка: {e}")
+        logging.error(f"Ошибка: {e}", exc_info=True) 
         await message.answer(f"❌ Ошибка: {e}")
     await state.clear()
 
