@@ -152,15 +152,26 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def process_role_callback(callback: types.CallbackQuery, state: FSMContext):
     role = callback.data.split("_")[2]
     await state.update_data(role=role)
-    await callback.message.answer(f"📍 Сиз: <b>{role}</b> тандадыңыз. Каякка барабыз?", reply_markup=get_cities_kb(), parse_mode="HTML")
-    await state.set_state(TaxiStates.destination)
+
+    if role == "посылка":
+        await callback.message.answer("📦 <b>Посылка каякта турат?</b>\n(Мисалы: Талас, Айтматов көчөсү 5)", reply_markup=types.ReplyKeyboardRemove(), parse_mode="HTML")
+        await state.set_state(TaxiStates.origin)
+    else:
+        await callback.message.answer(f"📍 Сиз: <b>{role}</b> тандадыңыз. Каякка барабыз?", reply_markup=get_cities_kb(), parse_mode="HTML")
+        await state.set_state(TaxiStates.destination)
     await callback.answer()
+
+@dp.message(TaxiStates.origin)
+async def process_origin(message: types.Message, state: FSMContext):
+    await state.update_data(origin=message.text)
+    await message.answer("📍 <b>Посылканы каякка жеткириши керек?</b>\n(Мисалы: Бишкек, Ош базар)", parse_mode="HTML")
+    await state.set_state(TaxiStates.destination)
 
 @dp.message(TaxiStates.destination)
 async def process_dest(message: types.Message, state: FSMContext):
     await state.update_data(destination=message.text)
     data = await state.get_data()
-    
+ 
     if data['role'] == "посылка":
         await message.answer("📦 <b>Посылканы кандай бересиз?</b>", reply_markup=get_delivery_type_kb(), parse_mode="HTML")
         await state.set_state(TaxiStates.delivery_type)
