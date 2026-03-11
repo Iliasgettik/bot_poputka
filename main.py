@@ -149,6 +149,51 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await message.answer(welcome_text, reply_markup=get_start_inline_kb(), parse_mode="HTML")
     await state.set_state(TaxiStates.choosing_role)
 
+# --- СЕКРЕТНАЯ КОМАНДА ДЛЯ АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ (ТОЛЬКО ДЛЯ АДМИНА) ---
+@dp.message(Command("update_bot_now"))
+async def cmd_update_all(message: types.Message):
+    await message.answer("⏳ Башталды... Обновляю кнопки в канале и рассылаю новое меню.")
+    
+    # 1. ОБНОВЛЯЕМ КНОПКИ В КАНАЛЕ
+    res_posts = supabase.table(TAXI_TABLE).select("message_id").not_.is_("message_id", "null").execute()
+    updated_posts = 0
+    for record in res_posts.data:
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=CHANNEL_ID,
+                message_id=record["message_id"],
+                reply_markup=get_channel_publish_kb() # Тут уже новая ссылка с ?start=new_post
+            )
+            updated_posts += 1
+            await asyncio.sleep(0.1) # Пауза, чтобы Телеграм не заблокировал за спам
+        except Exception:
+            pass # Если пост удален, просто пропускаем
+
+    await message.answer(f"✅ В канале обновлено кнопок: {updated_posts}\n⏳ Рассылаю меню пользователям...")
+
+    # 2. РАССЫЛАЕМ НОВОЕ МЕНЮ ВСЕМ ПОЛЬЗОВАТЕЛЯМ ИЗ БАЗЫ
+    res_users = supabase.table(TAXI_TABLE).select("user_id").execute()
+    unique_users = set(r["user_id"] for r in res_users.data if r.get("user_id")) # Берем только уникальные ID
+    
+    updated_users = 0
+    welcome_text = "🔄 <b>Биздин бот жаңырды!</b>\nЭми такси гана эмес, <b>ПОСЫЛКА</b> дагы жөнөтө аласыз 📦\n\nЖарыя берүү үчүн төмөндөн ролуңузду тандаңыз:"
+    
+    for uid in unique_users:
+        try:
+            await bot.send_message(
+                chat_id=uid, 
+                text=welcome_text, 
+                reply_markup=get_start_inline_kb(), 
+                parse_mode="HTML"
+            )
+            updated_users += 1
+            await asyncio.sleep(0.1) # Защита от лимитов Телеграма
+        except Exception:
+            pass # Если юзер заблокировал бота, пропускаем
+
+    await message.answer(f"✅ Готово!\nПользователей получили новое меню: {updated_users}")
+
+
 @dp.callback_query(F.data.startswith("set_role_"))
 async def process_role_callback(callback: types.CallbackQuery, state: FSMContext):
     role = callback.data.split("_")[2]
