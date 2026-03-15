@@ -80,7 +80,7 @@ async def build_weather_message():
 async def weather_background_task(bot: Bot, channel_id: int):
     while True:
         try:
-            logging.info("🌤 Запустилась фоновая задача: собираю погоду...") 
+            logging.info(f"🔎 ПРОВЕРКА: Бот пытается отправить погоду в чат с ID: {channel_id}")
             
             # Достаем ключ здесь, чтобы проверить его наличие
             api_key = os.getenv("WEATHER_API_KEY")
