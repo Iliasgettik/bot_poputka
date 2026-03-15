@@ -4,9 +4,6 @@ import aiohttp
 import logging
 from aiogram import Bot
 
-# Получаем ключ из окружения
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-
 # Список локаций
 LOCATIONS = [
     {"icon": "🏙", "name": "Бишкек", "query": "q=Bishkek"},
@@ -42,7 +39,9 @@ def get_weather_emoji(weather_main):
     return emojis.get(weather_main, "🌤")
 
 async def fetch_weather(session, location):
-    url = f"http://api.openweathermap.org/data/2.5/weather?{location['query']}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+    # Достаем ключ прямо перед запросом!
+    api_key = os.getenv("WEATHER_API_KEY") 
+    url = f"http://api.openweathermap.org/data/2.5/weather?{location['query']}&appid={api_key}&units=metric&lang=ru"
     async with session.get(url) as response:
         if response.status == 200:
             return await response.json()
@@ -82,14 +81,18 @@ async def weather_background_task(bot: Bot, channel_id: int):
     while True:
         try:
             logging.info("🌤 Запустилась фоновая задача: собираю погоду...") 
-            if WEATHER_API_KEY and channel_id:
+            
+            # Достаем ключ здесь, чтобы проверить его наличие
+            api_key = os.getenv("WEATHER_API_KEY")
+            
+            if api_key and channel_id:
                 text = await build_weather_message()
                 await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML")
                 logging.info("✅ Погода успешно отправлена в канал!")
             else:
-                logging.warning("❌ API ключ погоды или ID канала не найдены в Railway.")
+                logging.warning("❌ API ключ погоды или ID канала не найдены.")
         except Exception as e:
             logging.error(f"❌ Ошибка при отправке погоды: {e}")
             
-        # Пауза на 2 часа (3600 секунд)
+        # Пауза на 1 час (3600 секунд)
         await asyncio.sleep(3600)
