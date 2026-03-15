@@ -81,6 +81,30 @@ async def cmd_start(message: types.Message):
 # --- ГЛАВНЫЙ БЛОК: УМНЫЙ ПАРСИНГ СООБЩЕНИЙ ЧЕРЕЗ CHATGPT ---
 # =====================================================================
 
+
+
+@dp.message(Command("id"))
+async def cmd_id(message: types.Message):
+    # Достаем ID прямо из окружения сервера
+    env_id = os.getenv("CHANNEL_ID")
+    # Достаем реальный ID чата
+    chat_id = message.chat.id
+    
+    # Сравниваем
+    is_match = str(chat_id) == str(env_id).strip()
+    
+    text = (
+        f"🔎 <b>ТЕСТ ID</b>\n\n"
+        f"ID этого чата: <code>{chat_id}</code>\n"
+        f"ID в Railway: <code>{env_id}</code>\n"
+        f"Они абсолютно равны? <b>{'✅ ДА' if is_match else '❌ НЕТ'}</b>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+
+
+
 # =====================================================================
 # --- ГЛАВНЫЙ БЛОК: УМНЫЙ ПАРСИНГ СООБЩЕНИЙ ЧЕРЕЗ CHATGPT ---
 # =====================================================================
