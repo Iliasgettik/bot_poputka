@@ -85,29 +85,41 @@ async def cmd_start(message: types.Message):
 async def process_free_text_ad(message: types.Message):
     user_id = message.from_user.id
     text_lower = message.text.lower()
-    
-    # --- БЕСПЛАТНЫЙ ФИЛЬТР (Защита от спама) ---
     if "http" in text_lower or "t.me" in text_lower or "www." in text_lower:
-        try: await message.delete()
-        except Exception as e: logging.warning(f"Не удалось удалить сообщение со ссылкой: {e}")
-        return
+        try:
+            await message.delete()
+        except Exception as e:
+            logging.warning(f"Не удалось удалить сообщение со ссылкой: {e}")
+        return # Останавливаем код, в ИИ не идем
 
+    # 2. Фильтр коротких сообщений (меньше 3 слов)
+    # split() разбивает текст на слова по пробелам
     words = message.text.split()
     if len(words) < 3:
-        try: await message.delete()
-        except Exception as e: logging.warning(f"Не удалось удалить короткое сообщение: {e}")
-        return
+        try:
+            await message.delete()
+        except Exception as e:
+            logging.warning(f"Не удалось удалить короткое сообщение: {e}")
+        return # Останавливаем код, в ИИ не идем
 
-    # --- ЧТЕНИЕ ИЗ БД УДАЛЕНО: БОЛЬШЕ НИЧЕГО НЕ ПОДСТАВЛЯЕМ СТАРЫЕ ДАННЫЕ ---
+    # 1. Достаем последний пост юзера из БД
+    try:
+        res = supabase.table(TAXI_TABLE).select("*").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        past_data = res.data[0] if res.data else {}
+    except Exception as e:
+        logging.error(f"Ошибка БД при чтении: {e}")
+        past_data = {}
 
+    # 2. Промпт для GPT
+    # 2. Строгий промпт для GPT
     # 2. Строгий промпт для GPT
     prompt = f"""
     Проанализируй текст и извлеки данные. ВАЖНО: Нас интересуют ТОЛЬКО объявления о поиске попутки, такси, пассажиров, отправке посылок или ГРУЗОПЕРЕВОЗКАХ.
     Текст: "{message.text}"
     
     Верни строго JSON со следующими ключами:
-    "is_ad": boolean (true ТОЛЬКО если это такси, посылка, поиск машины или грузоперевозка. Если реклама других услуг или спам — ставь false!),
-    "role": string ("айдоочу", "жүргүнчү", "посылка", "жүк ташуу" или null). ПРАВИЛО: Если водитель на легковой машине ищет пассажиров, но попутно берет посылку — это строго "айдоочу"!,
+    "is_ad": boolean (true ТОЛЬКО если это такси, посылка, поиск машины или грузоперевозка. Если реклама других услуг (массаж и тд) или спам — ставь false!),
+    "role": string ("айдоочу", "жүргүнчү", "посылка", "жүк ташуу" или null). ПРАВИЛО: Если водитель на легковой машине (Соната, Камри и тд) ищет пассажиров, но попутно берет посылку — это строго "айдоочу"! Роль "жүк ташуу" ставь ТОЛЬКО для грузовых авто (Спринтер, Портер, фура) или крупного переезда.,
     "origin": string (откуда выезд, или null),
     "destination": string (куда едут, или null),
     "time": string (время/дата отправления, или null),
@@ -129,57 +141,35 @@ async def process_free_text_ad(message: types.Message):
         
         parsed_data = json.loads(response.choices[0].message.content)
         
-        # Игнорируем спам
+        # Игнорируем обычные сообщения ("привет", "как дела")
         if not parsed_data.get("is_ad"):
-            try: await message.delete()
-            except: pass
+            try:
+                await message.delete()
+            except Exception as e:
+                logging.warning(f"Не удалось удалить спам: {e}")
             return
 
-        # 4. Вытаскиваем данные СТРОГО ИЗ ТЕКУЩЕГО ТЕКСТА
-        role = parsed_data.get("role") or "айдоочу"
-        phone = parsed_data.get("phone_number")
-        
-        # Если ИИ не нашел остальные данные, ставим заглушки
+        # 4. Склеиваем данные
+        # Эти данные ПОСТОЯННЫЕ (берем из БД, если человек забыл их написать):
+        role = parsed_data.get("role") or past_data.get("role", "айдоочу")
+        phone = parsed_data.get("phone_number") or past_data.get("phone_num", "Номери жок")
+        car_model = parsed_data.get("car_model") or past_data.get("car_model", "Көрсөтүлгөн жок")
+
+        # А эти данные ДИНАМИЧЕСКИЕ (каждый рейс новые). Из старой БД их НЕ БЕРЕМ!
         origin = parsed_data.get("origin") or "Такталган жок"
         destination = parsed_data.get("destination") or "Такталган жок"
-        car_model = parsed_data.get("car_model") or "Көрсөтүлгөн жок"
         time = parsed_data.get("time") or "Сүйлөшүү боюнча"
         price = parsed_data.get("price") or "Келишим баада"
         passenger_count = parsed_data.get("passenger_count") or "Такталган жок"
-        cargo_type = parsed_data.get("cargo_type") or "Такталган жок"
-
-        # =================================================================
-        # 🚨 ПРОСТАЯ ВАЛИДАЦИЯ: Проверяем ТОЛЬКО наличие телефона
-        # =================================================================
-        if not phone:
-            try: await message.delete()
-            except: pass
-
-            error_msg = ("Саламатсызбы! Сиздин жарыяңыз тайпага чыккан жок, анткени <b>телефон номери</b> жазылган эмес.\n\n"
-                         "Сураныч, номериңизди кошуп, жарыяны кайра жөнөтүңүз.")
-            
-            # Пытаемся написать в личку
-            try:
-                await bot.send_message(chat_id=user_id, text=error_msg, parse_mode="HTML")
-            except Exception:
-                # Если личка закрыта, пишем в группу и удаляем через 10 сек
-                mention = f"<a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>"
-                tmp_msg = await bot.send_message(
-                    chat_id=message.chat.id, 
-                    text=f"⚠️ {mention}, жарыяңызда <b>телефон номери</b> жок!\nСураныч, номериңизди жазып, кайра жөнөтүңүз.",
-                    parse_mode="HTML"
-                )
-                await asyncio.sleep(10)
-                try: await tmp_msg.delete()
-                except: pass
-            
-            return # Останавливаем код, пост не публикуем!
-        # =================================================================
 
         # Форматируем номер телефона
         clean_phone = phone.replace(" ", "").replace("-", "")
         if clean_phone and not clean_phone.startswith('+') and clean_phone.replace('+','').isdigit(): 
             clean_phone = '+' + clean_phone
+
+        # 5. Формируем красивый текст
+        # Достаем тип груза, если он есть
+        cargo_type = parsed_data.get("cargo_type") or "Такталган жок"
 
         # 5. Формируем красивый текст
         if role == "посылка":
@@ -254,3 +244,24 @@ async def process_free_text_ad(message: types.Message):
 
     except Exception as e:
         logging.error(f"Ошибка GPT: {e}")
+
+@dp.message()
+async def delete_all_other_messages(message: types.Message):
+    try:
+        await message.delete()
+    except Exception as e:
+        logging.warning(f"Не удалось удалить медиа: {e}")
+
+# --- ЗАПУСК ---
+async def main():
+    await bot.set_my_commands([types.BotCommand(command="start", description="🚀 Баштоо")])
+    asyncio.create_task(cleanup_old_messages())
+    asyncio.create_task(weather_background_task(bot, CHANNEL_ID))
+    
+    await dp.start_polling(bot)
+
+if __name__ == '__main__':
+    try: 
+        asyncio.run(main())
+    except KeyboardInterrupt: 
+        print("\nБот выключен")
