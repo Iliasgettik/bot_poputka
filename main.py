@@ -81,6 +81,10 @@ async def cmd_start(message: types.Message):
 # --- ГЛАВНЫЙ БЛОК: УМНЫЙ ПАРСИНГ СООБЩЕНИЙ ЧЕРЕЗ CHATGPT ---
 # =====================================================================
 
+# =====================================================================
+# --- ГЛАВНЫЙ БЛОК: УМНЫЙ ПАРСИНГ СООБЩЕНИЙ ЧЕРЕЗ CHATGPT ---
+# =====================================================================
+
 @dp.message(F.text & ~F.text.startswith('/'))
 async def process_free_text_ad(message: types.Message):
     user_id = message.from_user.id
@@ -92,8 +96,7 @@ async def process_free_text_ad(message: types.Message):
             logging.warning(f"Не удалось удалить сообщение со ссылкой: {e}")
         return # Останавливаем код, в ИИ не идем
 
-    # 2. Фильтр коротких сообщений (меньше 3 слов)
-    # split() разбивает текст на слова по пробелам
+    # 1. Фильтр коротких сообщений (меньше 3 слов)
     words = message.text.split()
     if len(words) < 3:
         try:
@@ -102,16 +105,6 @@ async def process_free_text_ad(message: types.Message):
             logging.warning(f"Не удалось удалить короткое сообщение: {e}")
         return # Останавливаем код, в ИИ не идем
 
-    # 1. Достаем последний пост юзера из БД
-    try:
-        res = supabase.table(TAXI_TABLE).select("*").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        past_data = res.data[0] if res.data else {}
-    except Exception as e:
-        logging.error(f"Ошибка БД при чтении: {e}")
-        past_data = {}
-
-    # 2. Промпт для GPT
-    # 2. Строгий промпт для GPT
     # 2. Строгий промпт для GPT
     prompt = f"""
     Проанализируй текст и извлеки данные. ВАЖНО: Нас интересуют ТОЛЬКО объявления о поиске попутки, такси, пассажиров, отправке посылок или ГРУЗОПЕРЕВОЗКАХ.
@@ -149,27 +142,21 @@ async def process_free_text_ad(message: types.Message):
                 logging.warning(f"Не удалось удалить спам: {e}")
             return
 
-        # 4. Склеиваем данные
-        # Эти данные ПОСТОЯННЫЕ (берем из БД, если человек забыл их написать):
-        role = parsed_data.get("role") or past_data.get("role", "айдоочу")
-        phone = parsed_data.get("phone_number") or past_data.get("phone_num", "Номери жок")
-        car_model = parsed_data.get("car_model") or past_data.get("car_model", "Көрсөтүлгөн жок")
-
-        # А эти данные ДИНАМИЧЕСКИЕ (каждый рейс новые). Из старой БД их НЕ БЕРЕМ!
+        # 4. Собираем данные ТОЛЬКО из текущего сообщения (ответ GPT)
+        role = parsed_data.get("role") or "айдоочу" # По умолчанию, если не смог определить
+        phone = parsed_data.get("phone_number") or "Номери жок"
+        car_model = parsed_data.get("car_model") or "Көрсөтүлгөн жок"
         origin = parsed_data.get("origin") or "Такталган жок"
         destination = parsed_data.get("destination") or "Такталган жок"
         time = parsed_data.get("time") or "Сүйлөшүү боюнча"
         price = parsed_data.get("price") or "Келишим баада"
         passenger_count = parsed_data.get("passenger_count") or "Такталган жок"
+        cargo_type = parsed_data.get("cargo_type") or "Такталган жок"
 
         # Форматируем номер телефона
         clean_phone = phone.replace(" ", "").replace("-", "")
         if clean_phone and not clean_phone.startswith('+') and clean_phone.replace('+','').isdigit(): 
             clean_phone = '+' + clean_phone
-
-        # 5. Формируем красивый текст
-        # Достаем тип груза, если он есть
-        cargo_type = parsed_data.get("cargo_type") or "Такталган жок"
 
         # 5. Формируем красивый текст
         if role == "посылка":
@@ -218,14 +205,14 @@ async def process_free_text_ad(message: types.Message):
         except Exception as e:
             logging.warning(f"Не удалось удалить сообщение (нужны права админа): {e}")
 
-        # Считаем количество постов
+        # Считаем количество постов для аналитики
         count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
         post_count = (count_res.count or 0) + 1
 
         # 7. Отправляем в канал/группу
         msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
 
-        # 8. Сохраняем в Supabase
+        # 8. Сохраняем в Supabase (только для истории и очистки старых)
         db_payload = {
             "user_id": user_id, 
             "role": role, 
