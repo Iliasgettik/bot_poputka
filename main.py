@@ -18,6 +18,9 @@ from openai import AsyncOpenAI
 # Погода
 from weather import weather_background_task, build_weather_message
 
+admin_id_raw = os.getenv("ADMIN_ID")
+ADMIN_ID = int(admin_id_raw) if admin_id_raw else None
+
 # --- КОНФИГУРАЦИЯ ---
 load_dotenv()
  
