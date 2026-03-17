@@ -270,8 +270,36 @@ async def process_free_text_ad(message: types.Message):
         count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
         post_count = (count_res.count or 0) + 1
 
-        # 7. Отправляем в канал/группу
-        msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
+        # =====================================================================
+        # 7. Отправляем в канал/группу (ПРОВЕРКА НА VIP)
+        # =====================================================================
+        
+        # Проверяем в Supabase, есть ли юзер в таблице VIP
+        vip_res = supabase.table("premium_drivers").select("photo_file_id").eq("user_id", user_id).execute()
+        
+        # Если юзер есть в базе VIP и он водитель - отправляем фото
+        if vip_res.data and role == "айдоочу":
+            photo_file_id = vip_res.data[0]["photo_file_id"]
+            try:
+                msg = await bot.send_photo(
+                    chat_id=message.chat.id, 
+                    photo=photo_file_id, 
+                    caption=text, # Красивый текст идет в подпись к фото
+                    parse_mode="HTML", 
+                    reply_markup=get_channel_publish_kb()
+                )
+            except Exception as e:
+                logging.error(f"Ошибка отправки VIP фото: {e}. Отправляю как текст.")
+                # Фолбэк: если фото удалили или оно сломалось, отправляем просто текст
+                msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
+        else:
+            # Обычный текст для всех остальных
+            msg = await bot.send_message(
+                chat_id=message.chat.id, 
+                text=text, 
+                parse_mode="HTML", 
+                reply_markup=get_channel_publish_kb()
+            )
 
         # 8. Сохраняем в Supabase (только для истории и очистки старых)
         db_payload = {
