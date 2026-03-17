@@ -77,6 +77,37 @@ async def cmd_start(message: types.Message):
     else:
         await message.answer("👋 Саламатсызбы! Мен группадан жарыяларды автоматтык түрдө түзүүчү ботмун.")
 
+
+
+# =====================================================================
+# !!! НОВОЕ !!! АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ
+# =====================================================================
+@dp.message(F.photo & F.caption.startswith('/addvip'))
+async def add_vip_driver(message: types.Message):
+    # Проверяем, что команду вызвал именно ты (по ADMIN_ID)
+    if not ADMIN_ID or message.from_user.id != ADMIN_ID:
+        return 
+    
+    try:
+        # Извлекаем ID водителя из текста подписи
+        driver_id = int(message.caption.split()[1])
+        # Берем ID самой качественной версии фото
+        photo_id = message.photo[-1].file_id
+        
+        # Сохраняем в Supabase (upsert обновит, если такой водитель уже есть)
+        supabase.table("premium_drivers").upsert({
+            "user_id": driver_id,
+            "photo_file_id": photo_id
+        }).execute()
+        
+        await message.reply(f"✅ Водитель <code>{driver_id}</code> успешно добавлен в VIP-базу с этим фото!", parse_mode="HTML")
+    
+    except IndexError:
+        await message.reply("❌ Ошибка формата. Отправь фото, а в подписи (caption) напиши:\n`/addvip ID_ВОДИТЕЛЯ`", parse_mode="Markdown")
+    except Exception as e:
+        await message.reply(f"❌ Ошибка при добавлении в базу: {e}")
+
+
 # =====================================================================
 # --- ГЛАВНЫЙ БЛОК: УМНЫЙ ПАРСИНГ СООБЩЕНИЙ ЧЕРЕЗ CHATGPT ---
 # =====================================================================
