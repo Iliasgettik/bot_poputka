@@ -292,7 +292,12 @@ async def process_free_text_ad(message: types.Message):
 
 @dp.message()
 async def delete_all_other_messages(message: types.Message):
+    # Если это личка с ботом — ничего не удаляем, чтобы тебе было удобно с ним работать!
+    if message.chat.type == 'private':
+        return 
+        
     try:
+        # В группе удаляем весь спам и стикеры
         await message.delete()
     except Exception as e:
         logging.warning(f"Не удалось удалить медиа: {e}")
