@@ -6,10 +6,14 @@ import json
 from dotenv import load_dotenv
 
 # Aiogram импорты
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+# Импорты для Машины Состояний (FSM)
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 
 # Базы данных и API
 from supabase import create_client, Client
@@ -44,6 +48,11 @@ dp = Dispatcher(storage=MemoryStorage())
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 aclient = AsyncOpenAI(api_key=OPENAI_KEY)
 
+# --- КЛАСС СОСТОЯНИЙ ДЛЯ УТОЧНЕНИЯ РОЛИ ---
+class AdClarification(StatesGroup):
+    waiting_for_role = State()
+
+
 # --- ФОНОВАЯ ЗАДАЧА: ОЧИСТКА СТАРЫХ ПОСТОВ (3 СУТОК) ---
 async def cleanup_old_messages():
     while True:
@@ -52,9 +61,9 @@ async def cleanup_old_messages():
             res = supabase.table(TAXI_TABLE).select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
             
             for record in res.data:
-                try: 
+                try:
                     await bot.delete_message(chat_id=CHANNEL_ID, message_id=record["message_id"])
-                except: 
+                except:
                     pass
                 supabase.table(TAXI_TABLE).update({"message_id": None}).eq("id", record["id"]).execute()
         except Exception as e:
@@ -67,12 +76,12 @@ def get_channel_publish_kb():
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
     return builder.as_markup()
 
-# --- КОМАНДА /start (Оставили только для погоды) ---
+# --- КОМАНДА /start ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     if message.text and "show_weather" in message.text:
         try:
-            status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...") 
+            status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...")
             weather_text = await build_weather_message()
             await status_msg.edit_text(weather_text, parse_mode="HTML")
         except Exception as e:
@@ -80,24 +89,16 @@ async def cmd_start(message: types.Message):
     else:
         await message.answer("👋 Саламатсызбы! Мен группадан жарыяларды автоматтык түрдө түзүүчү ботмун.")
 
-
-
-# =====================================================================
-# !!! НОВОЕ !!! АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ
-# =====================================================================
+# --- АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ ---
 @dp.message(F.photo & F.caption.startswith('/addvip'))
 async def add_vip_driver(message: types.Message):
-    # Проверяем, что команду вызвал именно ты (по ADMIN_ID)
     if not ADMIN_ID or message.from_user.id != ADMIN_ID:
-        return 
+        return
     
     try:
-        # Извлекаем ID водителя из текста подписи
         driver_id = int(message.caption.split()[1])
-        # Берем ID самой качественной версии фото
         photo_id = message.photo[-1].file_id
         
-        # Сохраняем в Supabase (upsert обновит, если такой водитель уже есть)
         supabase.table("premium_drivers").upsert({
             "user_id": driver_id,
             "photo_file_id": photo_id
@@ -111,20 +112,11 @@ async def add_vip_driver(message: types.Message):
         await message.reply(f"❌ Ошибка при добавлении в базу: {e}")
 
 
-# =====================================================================
-# --- ГЛАВНЫЙ БЛОК: УМНЫЙ ПАРСИНГ СООБЩЕНИЙ ЧЕРЕЗ CHATGPT ---
-# =====================================================================
-
-
-
+# --- КОМАНДА /id ---
 @dp.message(Command("id"))
 async def cmd_id(message: types.Message):
-    # Достаем ID прямо из окружения сервера
     env_id = os.getenv("CHANNEL_ID")
-    # Достаем реальный ID чата
     chat_id = message.chat.id
-    
-    # Сравниваем
     is_match = str(chat_id) == str(env_id).strip()
     
     text = (
@@ -136,56 +128,33 @@ async def cmd_id(message: types.Message):
     await message.answer(text, parse_mode="HTML")
 
 
-
-
-
 # =====================================================================
-# --- ГЛАВНЫЙ БЛОК: УМНЫЙ ПАРСИНГ СООБЩЕНИЙ ЧЕРЕЗ CHATGPT ---
+# --- ФУНКЦИЯ ДЛЯ ПАРСИНГА И ПУБЛИКАЦИИ ---
 # =====================================================================
-
-@dp.message(F.text & ~F.text.startswith('/'))
-async def process_free_text_ad(message: types.Message):
+async def process_and_publish_ad(text_to_analyze: str, message: types.Message, msgs_to_delete: list = None):
     user_id = message.from_user.id
-
-    print(f"❗️ РЕАЛЬНЫЙ ID ЭТОЙ ГРУППЫ: {message.chat.id}")
-
-    text_lower = message.text.lower()
-    if "http" in text_lower or "t.me" in text_lower or "www." in text_lower:
-        try:
-            await message.delete()
-        except Exception as e:
-            logging.warning(f"Не удалось удалить сообщение со ссылкой: {e}")
-        return # Останавливаем код, в ИИ не идем
-
-    # 1. Фильтр коротких сообщений (меньше 3 слов)
-    words = message.text.split()
-    if len(words) < 3:
-        try:
-            await message.delete()
-        except Exception as e:
-            logging.warning(f"Не удалось удалить короткое сообщение: {e}")
-        return # Останавливаем код, в ИИ не идем
-
-    # 2. Строгий промпт для GPT
-    prompt = f"""
-    Проанализируй текст и извлеки данные. ВАЖНО: Нас интересуют ТОЛЬКО объявления о поиске попутки, такси, пассажиров, отправке посылок или ГРУЗОПЕРЕВОЗКАХ.
-    Текст: "{message.text}"
     
-    Верни строго JSON со следующими ключами:
-    "is_ad": boolean (true ТОЛЬКО если это такси, посылка, поиск машины или грузоперевозка. Если реклама других услуг (массаж и тд) или спам — ставь false!),
-    "role": string ("айдоочу", "жүргүнчү", "посылка", "жүк ташуу" или null). ПРАВИЛО: Если водитель на легковой машине (Соната, Камри и тд) ищет пассажиров, но попутно берет посылку — это строго "айдоочу"! Роль "жүк ташуу" ставь ТОЛЬКО для грузовых авто (Спринтер, Портер, фура) или крупного переезда.,
-    "origin": string (откуда выезд, или null),
-    "destination": string (куда едут, или null),
-    "time": string (время/дата отправления, или null),
-    "price": string (цена, или null),
-    "passenger_count": string (количество мест/людей, или null),
-    "cargo_type": string (описание груза, что везут, если это "жүк ташуу", иначе null),
-    "phone_number": string (номер телефона, или null),
-    "car_model": string (марка машины, или null)
+    prompt = f"""
+    Проанализируй текст: "{text_to_analyze}"
+    ВАЖНЫЕ ПРАВИЛА ДЛЯ КЫРГЫЗСКОГО ЯЗЫКА:
+    - Если пишут "кетем", "барам", "чыгам" + количество (напр. "2 адам") — это строго "жүргүнчү" (пассажир).
+    - Если пишут "алам", "алып кетем", "орын бар" — это "айдоочу" (водитель).
+    - Если из текста ВООБЩЕ НЕПОНЯТНО, кто это (например, просто "Таласка 2 адам" без "кетем" или "алам"), верни null в поле "role". НЕ УГАДЫВАЙ!
+   
+    Верни строго JSON:
+    "is_ad": boolean,
+    "role": string ("айдоочу", "жүргүнчү", "посылка", "жүк ташуу" или null),
+    "origin": string (или null),
+    "destination": string (или null),
+    "time": string (или null),
+    "price": string (или null),
+    "passenger_count": string (или null),
+    "cargo_type": string (или null),
+    "phone_number": string (или null),
+    "car_model": string (или null)
     """
 
     try:
-        # 3. Отправляем запрос в OpenAI
         response = await aclient.chat.completions.create(
             model="gpt-4o-mini",
             response_format={"type": "json_object"},
@@ -195,16 +164,17 @@ async def process_free_text_ad(message: types.Message):
         
         parsed_data = json.loads(response.choices[0].message.content)
         
-        # Игнорируем обычные сообщения ("привет", "как дела")
+        # Если это не реклама поездки - возвращаем статус спама
         if not parsed_data.get("is_ad"):
-            try:
-                await message.delete()
-            except Exception as e:
-                logging.warning(f"Не удалось удалить спам: {e}")
-            return
+            return "SPAM"
 
-        # 4. Собираем данные ТОЛЬКО из текущего сообщения (ответ GPT)
-        role = parsed_data.get("role") or "айдоочу" # По умолчанию, если не смог определить
+        role = parsed_data.get("role")
+        
+        # Если GPT сомневается и вернул null - требуем уточнения
+        if not role:
+            return "NEEDS_CLARIFICATION"
+
+        # Собираем данные
         phone = parsed_data.get("phone_number") or "Номери жок"
         car_model = parsed_data.get("car_model") or "Көрсөтүлгөн жок"
         origin = parsed_data.get("origin") or "Такталган жок"
@@ -214,124 +184,142 @@ async def process_free_text_ad(message: types.Message):
         passenger_count = parsed_data.get("passenger_count") or "Такталган жок"
         cargo_type = parsed_data.get("cargo_type") or "Такталган жок"
 
-        # Форматируем номер телефона
         clean_phone = phone.replace(" ", "").replace("-", "")
-        if clean_phone and not clean_phone.startswith('+') and clean_phone.replace('+','').isdigit(): 
+        if clean_phone and not clean_phone.startswith('+') and clean_phone.replace('+','').isdigit():
             clean_phone = '+' + clean_phone
 
-        # 5. Формируем красивый текст
+        # Формируем красивый текст
         if role == "посылка":
-            icon = "📦"
-            role_name = "ПОСЫЛКА"
+            icon, role_name = "📦", "ПОСЫЛКА"
             text = (f"{icon} <b>{role_name}</b>\n\n"
-                    f"📤 <b>Каяктан</b>: {origin}\n"
-                    f"📥 <b>Каякка</b>: {destination}\n"
-                    f"🕒 <b>Убакыт</b>: {time}\n"
+                    f"📤 <b>Каяктан</b>: {origin}\n📥 <b>Каякка</b>: {destination}\n🕒 <b>Убакыт</b>: {time}\n"
                     f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
                     f"👤 <b>Жөнөтүүчү</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
-        
         elif role == "жүк ташуу":
-            icon = "🚛"
-            role_name = "ЖҮК ТАШУУ"
+            icon, role_name = "🚛", "ЖҮК ТАШУУ"
             text = (f"{icon} <b>{role_name}</b>\n\n"
-                    f"📍 <b>Каяктан</b>: {origin}\n"
-                    f"🏁 <b>Каякка</b>: {destination}\n"
-                    f"🕒 <b>Убакыт</b>: {time}\n"
-                    f"🚛 <b>Унаа</b>: {car_model}\n"
-                    f"📦 <b>Жүк</b>: {cargo_type}\n"
-                    f"💰 <b>Баасы</b>: {price}\n"
+                    f"📍 <b>Каяктан</b>: {origin}\n🏁 <b>Каякка</b>: {destination}\n🕒 <b>Убакыт</b>: {time}\n"
+                    f"🚛 <b>Унаа</b>: {car_model}\n📦 <b>Жүк</b>: {cargo_type}\n💰 <b>Баасы</b>: {price}\n"
                     f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
                     f"👤 <b>Жарыя ээси</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
-            
         else:
             role_name = "АЙДООЧУ" if role == "айдоочу" else "ЖҮРГҮНЧҮ"
             icon = "🚕" if role == "айдоочу" else "👤"
-            text = (f"{icon} <b>{role_name}</b>\n\n"
-                    f"📍 <b>Каяктан</b>: {origin}\n"
-                    f"🏁 <b>Каякка</b>: {destination}\n"
-                    f"🕒 <b>Убакыт</b>: {time}\n")
-            
+            text = (f"{icon} <b>{role_name}</b>\n\n📍 <b>Каяктан</b>: {origin}\n🏁 <b>Каякка</b>: {destination}\n🕒 <b>Убакыт</b>: {time}\n")
             if role == "айдоочу":
                 text += f"🚗 <b>Унаа</b>: {car_model}\n"
             text += f"💰 <b>Баасы</b>: {price}\n"
-
             label = 'Орун' if role == 'айдоочу' else 'Адам'
-            text += (f"👥 <b>{label}</b>: {passenger_count}\n"
-                     f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
+            text += (f"👥 <b>{label}</b>: {passenger_count}\n📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
                      f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
 
-        # 6. Удаляем оригинальное сообщение юзера
-        try:
-            await message.delete()
-        except Exception as e:
-            logging.warning(f"Не удалось удалить сообщение (нужны права админа): {e}")
+        # Удаляем черновики (само сообщение юзера и вопросы бота, если они были)
+        if msgs_to_delete is None:
+            msgs_to_delete = [message.message_id]
+        
+        for msg_id in msgs_to_delete:
+            try:
+                await bot.delete_message(message.chat.id, msg_id)
+            except Exception:
+                pass
 
-        # Считаем количество постов для аналитики
+        # Аналитика постов
         count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
         post_count = (count_res.count or 0) + 1
 
-        # =====================================================================
-        # 7. Отправляем в канал/группу (ПРОВЕРКА НА VIP)
-        # =====================================================================
-        
-        # Проверяем в Supabase, есть ли юзер в таблице VIP
+        # Проверка на VIP
         vip_res = supabase.table("premium_drivers").select("photo_file_id").eq("user_id", user_id).execute()
         
-        # Если юзер есть в базе VIP и он водитель - отправляем фото
         if vip_res.data and role == "айдоочу":
             photo_file_id = vip_res.data[0]["photo_file_id"]
             try:
-                msg = await bot.send_photo(
-                    chat_id=message.chat.id, 
-                    photo=photo_file_id, 
-                    caption=text, # Красивый текст идет в подпись к фото
-                    parse_mode="HTML", 
-                    reply_markup=get_channel_publish_kb()
-                )
-            except Exception as e:
-                logging.error(f"Ошибка отправки VIP фото: {e}. Отправляю как текст.")
-                # Фолбэк: если фото удалили или оно сломалось, отправляем просто текст
+                msg = await bot.send_photo(chat_id=message.chat.id, photo=photo_file_id, caption=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
+            except:
                 msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
         else:
-            # Обычный текст для всех остальных
-            msg = await bot.send_message(
-                chat_id=message.chat.id, 
-                text=text, 
-                parse_mode="HTML", 
-                reply_markup=get_channel_publish_kb()
-            )
+            msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
 
-        # 8. Сохраняем в Supabase (только для истории и очистки старых)
+        # Сохранение в БД
         db_payload = {
-            "user_id": user_id, 
-            "role": role, 
-            "origin": origin,
-            "destination": destination,
-            "time": time, 
-            "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
-            "phone_num": phone, 
-            "car_model": car_model, 
-            "price": price, 
-            "message_id": msg.message_id,
-            "post_count": post_count,
+            "user_id": user_id, "role": role, "origin": origin, "destination": destination,
+            "time": time, "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
+            "phone_num": phone, "car_model": car_model, "price": price,
+            "message_id": msg.message_id, "post_count": post_count,
             "created_at": datetime.datetime.now(TZ_BISHKEK).isoformat()
         }
         supabase.table(TAXI_TABLE).insert(db_payload).execute()
+        
+        return "SUCCESS"
 
     except Exception as e:
         logging.error(f"Ошибка GPT: {e}")
+        return "ERROR"
 
+# =====================================================================
+# --- ХЭНДЛЕР №1: Ловит ОБЫЧНЫЕ сообщения ---
+# =====================================================================
+@dp.message(F.text & ~F.text.startswith('/'), StateFilter(None))
+async def handle_new_ad(message: types.Message, state: FSMContext):
+    text_lower = message.text.lower()
+    
+    # 1. Фильтр коротких сообщений и ссылок (АДМИНА НЕ ТРОГАЕМ)
+    if "http" in text_lower or "t.me" in text_lower or "www." in text_lower or len(message.text.split()) < 3:
+        if not ADMIN_ID or message.from_user.id != ADMIN_ID:
+            try:
+                await message.delete()
+            except:
+                pass
+        return 
+
+    # Отправляем в функцию парсинга
+    status = await process_and_publish_ad(message.text, message)
+
+    if status == "NEEDS_CLARIFICATION":
+        bot_msg = await message.reply("🤔 Урматтуу колдонуучу, сиз **айдоочусузбу** же **жүргүнчүсүзбү**? (Ушул смске жооп жазып, тактап коюңуз)", parse_mode="Markdown")
+        await state.set_state(AdClarification.waiting_for_role)
+        await state.update_data(
+            original_text=message.text,
+            original_msg_id=message.message_id,
+            bot_msg_id=bot_msg.message_id
+        )
+    # 2. Если GPT решил, что это просто спам/общение (АДМИНА НЕ ТРОГАЕМ)
+    elif status == "SPAM":
+        if not ADMIN_ID or message.from_user.id != ADMIN_ID:
+            try:
+                await message.delete()
+            except:
+                pass
+
+# =====================================================================
+# --- ХЭНДЛЕР №2: Ловит ОТВЕТ пользователя на вопрос бота ---
+# =====================================================================
+@dp.message(StateFilter(AdClarification.waiting_for_role))
+async def handle_clarification_reply(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    original_text = data.get("original_text")
+    original_msg_id = data.get("original_msg_id")
+    bot_msg_id = data.get("bot_msg_id")
+
+    combined_text = f"Оригинальное сообщение: {original_text}\nУточнение от пользователя: {message.text}"
+    msgs_to_delete = [original_msg_id, bot_msg_id, message.message_id]
+    
+    await state.clear()
+    await process_and_publish_ad(combined_text, message, msgs_to_delete)
+
+# --- УДАЛЕНИЕ МУСОРА (Стикеры, фото, видео и т.д.) ---
 @dp.message()
 async def delete_all_other_messages(message: types.Message):
-    # Если это личка с ботом — ничего не удаляем, чтобы тебе было удобно с ним работать!
     if message.chat.type == 'private':
-        return 
+        return
+        
+    # 3. Админ может скидывать любые фото/стикеры/видео (АДМИНА НЕ ТРОГАЕМ)
+    if ADMIN_ID and message.from_user.id == ADMIN_ID:
+        return
         
     try:
-        # В группе удаляем весь спам и стикеры
         await message.delete()
     except Exception as e:
-        logging.warning(f"Не удалось удалить медиа: {e}")
+        logging.warning(f"Не удалось удалить медиа/мусор: {e}")
 
 # --- ЗАПУСК ---
 async def main():
@@ -342,7 +330,7 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    try: 
+    try:
         asyncio.run(main())
-    except KeyboardInterrupt: 
+    except KeyboardInterrupt:
         print("\nБот выключен")
