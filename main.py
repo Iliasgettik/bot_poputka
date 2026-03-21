@@ -52,6 +52,10 @@ aclient = AsyncOpenAI(api_key=OPENAI_KEY)
 class AdClarification(StatesGroup):
     waiting_for_role = State()
 
+class BuyVIP(StatesGroup):
+    waiting_for_receipt = State()
+    waiting_for_car_photo = State()
+
 
 # --- ФОНОВАЯ ЗАДАЧА: ОЧИСТКА СТАРЫХ ПОСТОВ (3 СУТОК) ---
 async def cleanup_old_messages():
@@ -76,9 +80,16 @@ def get_channel_publish_kb():
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
     return builder.as_markup()
 
+def get_channel_publish_kb():
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
+    # Добавляем кнопку покупки VIP, которая перекинет юзера в личку с ботом
+    builder.row(types.InlineKeyboardButton(text="👑 VIP алуу (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
+    return builder.as_markup()
+
 # --- КОМАНДА /start ---
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, state: FSMContext):
     if message.text and "show_weather" in message.text:
         try:
             status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...")
@@ -86,15 +97,114 @@ async def cmd_start(message: types.Message):
             await status_msg.edit_text(weather_text, parse_mode="HTML")
         except Exception as e:
             await message.answer(f"❌ Ошибка при загрузке погоды: {e}")
+            
+    elif message.text and "buy_vip" in message.text:
+        # Юзер нажал кнопку купить VIP
+        text = (
+            "👑 <b>VIP-статус сатып алуу</b>\n\n"
+            "VIP-статус сизге чектөөсүз жарыя киргизүүгө жана <b>унааңыздын сүрөтүн</b> кошууга мүмкүнчүлүк берет!\n\n"
+            "💳 <b>Баасы:</b> 200 сом (1 жумага)\n"
+            "🏦 <b>MBank номери:</b> <code>+996555123456</code> (Аты-жөнү: Имя Ф.)\n\n"
+            "👇 Төлөмдү жүргүзгөндөн кийин, <b>чекдин сүрөтүн ушул жакка жөнөтүңүз</b>."
+        )
+        # Если есть фото QR-кода, лучше отправлять его (укажи file_id или URL)
+        # await message.answer_photo(photo="URL_ИЛИ_ID_QR_КОДА", caption=text, parse_mode="HTML")
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(BuyVIP.waiting_for_receipt)
+        
     else:
         await message.answer("👋 Саламатсызбы! Мен группадан жарыяларды автоматтык түрдө түзүүчү ботмун.")
+
+@dp.message(F.photo, StateFilter(BuyVIP.waiting_for_receipt))
+async def handle_receipt(message: types.Message, state: FSMContext):
+    receipt_photo_id = message.photo[-1].file_id
+    await state.update_data(receipt_photo_id=receipt_photo_id)
+    
+    await message.answer("✅ Чек кабыл алынды!\n\n🚗 Эми <b>унааңыздын сүрөтүн</b> жөнөтүңүз (бул сүрөт жарыяларыңызга кошулат).", parse_mode="HTML")
+    await state.set_state(BuyVIP.waiting_for_car_photo)
+
+
+@dp.message(F.photo, StateFilter(BuyVIP.waiting_for_car_photo))
+async def handle_car_photo(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    receipt_photo_id = data.get("receipt_photo_id")
+    car_photo_id = message.photo[-1].file_id
+    user_id = message.from_user.id
+    username = message.from_user.username or "Без юзернейма"
+    
+    # Клавиатура для админа
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text="✅ Одобрить (7 дней)", callback_data=f"approve_vip_{user_id}"),
+        types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_vip_{user_id}")
+    )
+    
+    admin_text = f"🆕 <b>Заявка на VIP!</b>\n👤 Юзер: @{username} (<code>{user_id}</code>)\n\nВложил 2 фото (чек и авто). Выбери действие:"
+    
+    # Отправляем админу группу медиа (чек + фото авто)
+    media = [
+        types.InputMediaPhoto(media=receipt_photo_id, caption="📸 ЧЕК"),
+        types.InputMediaPhoto(media=car_photo_id, caption="🚗 ФОТО АВТО")
+    ]
+    if ADMIN_ID:
+        await bot.send_media_group(chat_id=ADMIN_ID, media=media)
+        await bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode="HTML", reply_markup=builder.as_markup())
+        
+        # Сохраняем file_id авто во временную память админа, чтобы при одобрении записать в БД
+        # Простой вариант - передать в callback_data нельзя из-за лимита байтов, поэтому сохраняем через Redis/MemoryStorage админа, 
+        # но для MVP мы сохраним авто-фото прямо в Supabase со статусом "pending", либо используем кэш. 
+        # Для простоты: запишем в Supabase сразу, но VIP не активен, пока нет expires_at.
+        supabase.table("premium_drivers").upsert({
+            "user_id": user_id,
+            "photo_file_id": car_photo_id
+        }).execute()
+
+    await message.answer("⏳ Рахмат! Сиздин маалыматыңыз текшерүүгө жөнөтүлдү. Администратор тастыктагандан кийин сизге билдирүү келет.")
+    await state.clear()
+
+
+
+@dp.callback_query(F.data.startswith("approve_vip_"))
+async def admin_approve_vip(callback: types.CallbackQuery):
+    user_id = int(callback.data.split("_")[2])
+    
+    # Даем VIP на 7 дней
+    expires_at = (datetime.datetime.now(TZ_BISHKEK) + datetime.timedelta(days=7)).isoformat()
+    
+    supabase.table("premium_drivers").update({
+        "expires_at": expires_at
+    }).eq("user_id", user_id).execute()
+    
+    await callback.message.edit_text(f"✅ Водитель {user_id} успешно получил VIP до {expires_at[:10]}!")
+    
+    try:
+        await bot.send_message(
+            chat_id=user_id, 
+            text="🎉 <b>Куттуктайбыз!</b> Сиздин төлөмүңүз тастыкталды.\n\nСизге 7 күнгө VIP-статус берилди. Эми группага жазган жарыяларыңыз чектөөсүз жана унааңыздын сүрөтү менен чыгат!", 
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logging.error(f"Не смогли отправить юзеру сообщение: {e}")
+
+@dp.callback_query(F.data.startswith("reject_vip_"))
+async def admin_reject_vip(callback: types.CallbackQuery):
+    user_id = int(callback.data.split("_")[2])
+    
+    # Удаляем запись (или можно оставить, но expires_at = null)
+    supabase.table("premium_drivers").delete().eq("user_id", user_id).execute()
+    
+    await callback.message.edit_text(f"❌ Заявка водителя {user_id} отклонена.")
+    
+    try:
+        await bot.send_message(chat_id=user_id, text="❌ Кечиресиз, сиздин төлөмүңүз тастыкталган жок. Сураныч, админге кайрылыңыз.")
+    except:
+        pass
 
 # --- АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ ---
 @dp.message(F.photo & F.caption.startswith('/addvip'))
 async def add_vip_driver(message: types.Message):
     if not ADMIN_ID or message.from_user.id != ADMIN_ID:
         return
-    
     try:
         driver_id = int(message.caption.split()[1])
         photo_id = message.photo[-1].file_id
@@ -241,7 +351,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
             text += (f"👥 <b>{label}</b>: {passenger_count}\n📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
                      f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
 
-        # Удаляем черновики (само сообщение юзера и вопросы бота, если они были)
+# Удаляем черновики (само сообщение юзера и вопросы бота, если они были)
         if msgs_to_delete is None:
             msgs_to_delete = [message.message_id]
         
@@ -251,15 +361,72 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
             except Exception:
                 pass
 
-        # Аналитика постов
+        # ==========================================
+        # 👑 БИЗНЕС-ЛОГИКА: ЛИМИТЫ И VIP
+        # ==========================================
+        now = datetime.datetime.now(TZ_BISHKEK)
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+        # 1. Считаем, сколько постов юзер УЖЕ сделал сегодня
+        daily_count_res = supabase.table(TAXI_TABLE).select("id", count="exact") \
+            .eq("user_id", user_id).eq("role", role).gte("created_at", start_of_day).execute()
+        posts_today = daily_count_res.count or 0
+
+        # 2. Проверяем статус VIP и срок его действия
+        is_vip = False
+        photo_file_id = None
+        
+        vip_res = supabase.table("premium_drivers").select("photo_file_id, expires_at").eq("user_id", user_id).execute()
+        
+        if vip_res.data:
+            expires_at_str = vip_res.data[0].get("expires_at")
+            if expires_at_str:
+                # Парсим время из БД (Supabase отдает формат ISO 8601)
+                expires_at = datetime.datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                if expires_at > now:
+                    is_vip = True
+                    photo_file_id = vip_res.data[0]["photo_file_id"]
+
+        # 3. ПРОВЕРКА ЛИМИТА: Если не VIP и это уже 4-й пост (лимит 3)
+        # Ограничиваем ТОЛЬКО водителей ("айдоочу") и грузоперевозки ("жүк ташуу")
+        if not is_vip and posts_today >= 3 and role in ["айдоочу", "жүк ташуу"]:
+            
+            # Меняем текст, чтобы он подходил и таксистам, и грузовикам
+            role_display = "унааңыздын" if role == "айдоочу" else "жүк ташуучу унааңыздын"
+            
+            limit_text = (
+                f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү (3/3).</b>\n\n"
+                f"Жарыяңыз киргизилген жок. Чектөөсүз жарыя жазуу жана <b>{role_display} сүрөтүн</b> кошуу үчүн <b>VIP-статус</b> сатып алыңыз!\n\n"
+                "👇 VIP алуу үчүн төмөнкү баскычты басыңыз:"
+            )
+            
+            # Отправляем сообщение-уведомление прямо в группу
+            limit_builder = InlineKeyboardBuilder()
+            limit_builder.row(types.InlineKeyboardButton(text="👑 VIP алуу", url=f"{BOT_LINK}?start=buy_vip"))
+            
+            warning_msg = await bot.send_message(chat_id=message.chat.id, text=limit_text, parse_mode="HTML", reply_markup=limit_builder.as_markup())
+            
+            # Удаляем предупреждение через 2 минуты, чтобы не засорять чат
+            async def delete_warning(chat_id, msg_id):
+                await asyncio.sleep(120)
+                try:
+                    await bot.delete_message(chat_id, msg_id)
+                except:
+                    pass
+            asyncio.create_task(delete_warning(warning_msg.chat.id, warning_msg.message_id))
+            
+            return "LIMIT_REACHED"
+
+        # ==========================================
+        # 📤 ПУБЛИКАЦИЯ ПОСТА И СОХРАНЕНИЕ
+        # ==========================================
+        
+        # Общая аналитика постов юзера (за все время)
         count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
         post_count = (count_res.count or 0) + 1
 
-        # Проверка на VIP
-        vip_res = supabase.table("premium_drivers").select("photo_file_id").eq("user_id", user_id).execute()
-        
-        if vip_res.data and role == "айдоочу":
-            photo_file_id = vip_res.data[0]["photo_file_id"]
+        # Отправка самого поста в группу (с фото, если VIP)
+        if is_vip and role == "айдоочу" and photo_file_id:
             try:
                 msg = await bot.send_photo(chat_id=message.chat.id, photo=photo_file_id, caption=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
             except:
@@ -273,7 +440,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
             "time": time, "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
             "phone_num": phone, "car_model": car_model, "price": price,
             "message_id": msg.message_id, "post_count": post_count,
-            "created_at": datetime.datetime.now(TZ_BISHKEK).isoformat()
+            "created_at": now.isoformat()
         }
         supabase.table(TAXI_TABLE).insert(db_payload).execute()
         
