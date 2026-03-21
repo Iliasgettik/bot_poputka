@@ -56,6 +56,9 @@ class BuyVIP(StatesGroup):
     waiting_for_receipt = State()
     waiting_for_car_photo = State()
 
+class AdminReject(StatesGroup):
+    waiting_for_reason = State()
+
 
 # --- ФОНОВАЯ ЗАДАЧА: ОЧИСТКА СТАРЫХ ПОСТОВ (3 СУТОК) ---
 async def cleanup_old_messages():
@@ -75,11 +78,6 @@ async def cleanup_old_messages():
         await asyncio.sleep(3600)
 
 # --- КНОПКА ПОД ПОСТОМ ---
-def get_channel_publish_kb():
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
-    return builder.as_markup()
-
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
@@ -103,8 +101,8 @@ async def cmd_start(message: types.Message, state: FSMContext):
         text = (
             "👑 <b>VIP-статус сатып алуу</b>\n\n"
             "VIP-статус сизге чектөөсүз жарыя киргизүүгө жана <b>унааңыздын сүрөтүн</b> кошууга мүмкүнчүлүк берет!\n\n"
-            "💳 <b>Баасы:</b> 200 сом (1 жумага)\n"
-            "🏦 <b>MBank номери:</b> <code>+996555123456</code> (Аты-жөнү: Имя Ф.)\n\n"
+            "💳 <b>Баасы:</b> 200 сом (1 айга)\n"
+            "🏦 <b>MBank номери:</b> <code>+996555905044</code> (Аты-жөнү: Ильяс Р.)\n\n"
             "👇 Төлөмдү жүргүзгөндөн кийин, <b>чекдин сүрөтүн ушул жакка жөнөтүңүз</b>."
         )
         # Если есть фото QR-кода, лучше отправлять его (укажи file_id или URL)
@@ -135,7 +133,7 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
     # Клавиатура для админа
     builder = InlineKeyboardBuilder()
     builder.row(
-        types.InlineKeyboardButton(text="✅ Одобрить (7 дней)", callback_data=f"approve_vip_{user_id}"),
+        types.InlineKeyboardButton(text="✅ Одобрить (30 дней)", callback_data=f"approve_vip_{user_id}"),
         types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_vip_{user_id}")
     )
     
@@ -167,38 +165,85 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("approve_vip_"))
 async def admin_approve_vip(callback: types.CallbackQuery):
     user_id = int(callback.data.split("_")[2])
+    now = datetime.datetime.now(TZ_BISHKEK)
     
-    # Даем VIP на 7 дней
-    expires_at = (datetime.datetime.now(TZ_BISHKEK) + datetime.timedelta(days=7)).isoformat()
+    # 1. Получаем текущие данные водителя из базы
+    user_data = supabase.table("premium_drivers").select("expires_at").eq("user_id", user_id).execute()
     
+    # 2. Логика продления (суммируем дни, если VIP еще активен)
+    new_expires_at = now + datetime.timedelta(days=30) # По умолчанию: +30 дней от сегодня
+    
+    if user_data.data and user_data.data[0].get("expires_at"):
+        old_expires_str = user_data.data[0]["expires_at"]
+        old_expires_date = datetime.datetime.fromisoformat(old_expires_str.replace('Z', '+00:00'))
+        
+        # Если старый VIP еще НЕ истек, прибавляем 7 дней к ОСТАТКУ
+        if old_expires_date > now:
+            new_expires_at = old_expires_date + datetime.timedelta(days=30)
+            
+    expires_at_iso = new_expires_at.isoformat()
+    
+    # 3. Обновляем базу данных новой датой
     supabase.table("premium_drivers").update({
-        "expires_at": expires_at
+        "expires_at": expires_at_iso
     }).eq("user_id", user_id).execute()
     
-    await callback.message.edit_text(f"✅ Водитель {user_id} успешно получил VIP до {expires_at[:10]}!")
+    await callback.message.edit_text(f"✅ Водитель {user_id} успешно получил/продлил VIP до {expires_at_iso[:10]}!")
     
+    # 4. Отправляем уведомление с новой датой
     try:
         await bot.send_message(
             chat_id=user_id, 
-            text="🎉 <b>Куттуктайбыз!</b> Сиздин төлөмүңүз тастыкталды.\n\nСизге 7 күнгө VIP-статус берилди. Эми группага жазган жарыяларыңыз чектөөсүз жана унааңыздын сүрөтү менен чыгат!", 
+            text=f"🎉 <b>Куттуктайбыз!</b> Сиздин төлөмүңүз тастыкталды.\n\nСиздин VIP-статусуңуз <b>{expires_at_iso[:10]}</b> күнүнө чейин узартылды/берилди. Эми группага жазган жарыяларыңыз чектөөсүз жана унааңыздын сүрөтү менен чыгат!", 
             parse_mode="HTML"
         )
     except Exception as e:
         logging.error(f"Не смогли отправить юзеру сообщение: {e}")
 
 @dp.callback_query(F.data.startswith("reject_vip_"))
-async def admin_reject_vip(callback: types.CallbackQuery):
+async def admin_reject_vip(callback: types.CallbackQuery, state: FSMContext):
     user_id = int(callback.data.split("_")[2])
     
-    # Удаляем запись (или можно оставить, но expires_at = null)
+    # Запоминаем, кого именно мы отклоняем
+    await state.update_data(reject_user_id=user_id)
+    await state.set_state(AdminReject.waiting_for_reason)
+    
+    # Просим админа написать причину
+    await callback.message.answer(
+        "✍️ <b>Напиши причину отказа текстом</b> (например: 'Чек эски' или 'Машинанын реалдуу сүрөтүн киргизиңиз').\n"
+        "<i>Бул текст түз эле айдоочуга барат.</i>", 
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@dp.message(StateFilter(AdminReject.waiting_for_reason))
+async def handle_reject_reason(message: types.Message, state: FSMContext):
+    # Убеждаемся, что пишет админ
+    if not ADMIN_ID or message.from_user.id != ADMIN_ID:
+        return
+        
+    data = await state.get_data()
+    user_id = data.get("reject_user_id")
+    admin_reason = message.text
+    
+    # Удаляем заявку из базы
     supabase.table("premium_drivers").delete().eq("user_id", user_id).execute()
     
-    await callback.message.edit_text(f"❌ Заявка водителя {user_id} отклонена.")
+    # Отправляем сообщение водителю с твоей причиной
+    user_text = (
+        "❌ <b>Кечиресиз, сиздин VIP өтүнүчүңүз четке кагылды.</b>\n\n"
+        f"💬 <b>Админдин комментарийи:</b>\n<i>{admin_reason}</i>\n\n"
+        "Сураныч, маалыматты тууралап, кайрадан /start аркылуу жөнөтүңүз."
+    )
     
     try:
-        await bot.send_message(chat_id=user_id, text="❌ Кечиресиз, сиздин төлөмүңүз тастыкталган жок. Сураныч, админге кайрылыңыз.")
-    except:
-        pass
+        await bot.send_message(chat_id=user_id, text=user_text, parse_mode="HTML")
+        await message.answer(f"✅ Причина отправлена юзеру <code>{user_id}</code>, заявка удалена.", parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка отправки юзеру (возможно, он заблокировал бота): {e}")
+        
+    # Очищаем состояние админа
+    await state.clear()
 
 # --- АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ ---
 @dp.message(F.photo & F.caption.startswith('/addvip'))
