@@ -118,7 +118,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def handle_invalid_format(message: types.Message):
     await message.answer(
         "⚠️ <b>Кечиресиз, файл, PDF же текст кабыл алынбайт.</b>\n\n"
-        "Сураныч, чекти (же унаанын сүрөтүн) кадимки <b>сүрөт (скриншот)</b> кылып жөнөтүңүз 📸", 
+        "Сураныч, чекти кадимки <b>сүрөт (скриншот)</b> кылып жөнөтүңүз 📸", 
         parse_mode="HTML"
     )
 
