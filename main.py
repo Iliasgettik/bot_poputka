@@ -48,10 +48,8 @@ dp = Dispatcher(storage=MemoryStorage())
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 aclient = AsyncOpenAI(api_key=OPENAI_KEY)
 
-# --- КЛАСС СОСТОЯНИЙ ДЛЯ УТОЧНЕНИЯ РОЛИ ---
-class AdClarification(StatesGroup):
-    waiting_for_role = State()
 
+# --- КЛАССЫ СОСТОЯНИЙ ---
 class BuyVIP(StatesGroup):
     waiting_for_receipt = State()
     waiting_for_car_photo = State()
@@ -65,23 +63,32 @@ async def cleanup_old_messages():
     while True:
         try:
             three_days_ago = (datetime.datetime.now(TZ_BISHKEK) - datetime.timedelta(days=3)).isoformat()
-            res = supabase.table(TAXI_TABLE).select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
+            
+            # АСИНХРОННЫЙ ВЫЗОВ БД
+            res = await asyncio.to_thread(
+                lambda: supabase.table(TAXI_TABLE).select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
+            )
             
             for record in res.data:
                 try:
                     await bot.delete_message(chat_id=CHANNEL_ID, message_id=record["message_id"])
                 except:
                     pass
-                supabase.table(TAXI_TABLE).update({"message_id": None}).eq("id", record["id"]).execute()
+                
+                # Обновляем БД асинхронно
+                await asyncio.to_thread(
+                    lambda r=record: supabase.table(TAXI_TABLE).update({"message_id": None}).eq("id", r["id"]).execute()
+                )
         except Exception as e:
             logging.error(f"Ошибка очистки: {e}")
-        await asyncio.sleep(3600)
+        finally:
+            # Спим в любом случае, чтобы цикл не сломался
+            await asyncio.sleep(3600)
 
 # --- КНОПКА ПОД ПОСТОМ ---
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
-    # Добавляем кнопку покупки VIP, которая перекинет юзера в личку с ботом
     builder.row(types.InlineKeyboardButton(text="👑 VIP алуу (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
     return builder.as_markup()
 
@@ -97,7 +104,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
             await message.answer(f"❌ Ошибка при загрузке погоды: {e}")
             
     elif message.text and "buy_vip" in message.text:
-        # Юзер нажал кнопку купить VIP
         text = (
             "👑 <b>VIP-статус сатып алуу</b>\n\n"
             "VIP-статус сизге чектөөсүз жарыя киргизүүгө жана <b>унааңыздын сүрөтүн</b> кошууга мүмкүнчүлүк берет!\n\n"
@@ -105,8 +111,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
             "🏦 <b>MBank номери:</b> <code>+996555905044</code> (Аты-жөнү: Ильяс Р.)\n\n"
             "👇 Төлөмдү жүргүзгөндөн кийин, <b>чекдин сүрөтүн ушул жакка жөнөтүңүз</b>."
         )
-        # Если есть фото QR-кода, лучше отправлять его (укажи file_id или URL)
-        # await message.answer_photo(photo="URL_ИЛИ_ID_QR_КОДА", caption=text, parse_mode="HTML")
         await message.answer(text, parse_mode="HTML")
         await state.set_state(BuyVIP.waiting_for_receipt)
         
@@ -139,7 +143,6 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     username = message.from_user.username or "Без юзернейма"
     
-    # Клавиатура для админа
     builder = InlineKeyboardBuilder()
     builder.row(
         types.InlineKeyboardButton(text="✅ Одобрить (30 дней)", callback_data=f"approve_vip_{user_id}"),
@@ -148,7 +151,6 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
     
     admin_text = f"🆕 <b>Заявка на VIP!</b>\n👤 Юзер: @{username} (<code>{user_id}</code>)\n\nВложил 2 фото (чек и авто). Выбери действие:"
     
-    # Отправляем админу группу медиа (чек + фото авто)
     media = [
         types.InputMediaPhoto(media=receipt_photo_id, caption="📸 ЧЕК"),
         types.InputMediaPhoto(media=car_photo_id, caption="🚗 ФОТО АВТО")
@@ -157,18 +159,16 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
         await bot.send_media_group(chat_id=ADMIN_ID, media=media)
         await bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode="HTML", reply_markup=builder.as_markup())
         
-        # Сохраняем file_id авто во временную память админа, чтобы при одобрении записать в БД
-        # Простой вариант - передать в callback_data нельзя из-за лимита байтов, поэтому сохраняем через Redis/MemoryStorage админа, 
-        # но для MVP мы сохраним авто-фото прямо в Supabase со статусом "pending", либо используем кэш. 
-        # Для простоты: запишем в Supabase сразу, но VIP не активен, пока нет expires_at.
-        supabase.table("premium_drivers").upsert({
-            "user_id": user_id,
-            "photo_file_id": car_photo_id
-        }).execute()
+        # АСИНХРОННЫЙ ВЫЗОВ БД
+        await asyncio.to_thread(
+            lambda: supabase.table("premium_drivers").upsert({
+                "user_id": user_id,
+                "photo_file_id": car_photo_id
+            }).execute()
+        )
 
     await message.answer("⏳ Рахмат! Сиздин маалыматыңыз текшерүүгө жөнөтүлдү. Администратор тастыктагандан кийин сизге билдирүү келет.")
     await state.clear()
-
 
 
 @dp.callback_query(F.data.startswith("approve_vip_"))
@@ -176,30 +176,31 @@ async def admin_approve_vip(callback: types.CallbackQuery):
     user_id = int(callback.data.split("_")[2])
     now = datetime.datetime.now(TZ_BISHKEK)
     
-    # 1. Получаем текущие данные водителя из базы
-    user_data = supabase.table("premium_drivers").select("expires_at").eq("user_id", user_id).execute()
+    # АСИНХРОННЫЙ ВЫЗОВ БД
+    user_data = await asyncio.to_thread(
+        lambda: supabase.table("premium_drivers").select("expires_at").eq("user_id", user_id).execute()
+    )
     
-    # 2. Логика продления (суммируем дни, если VIP еще активен)
-    new_expires_at = now + datetime.timedelta(days=30) # По умолчанию: +30 дней от сегодня
+    new_expires_at = now + datetime.timedelta(days=30)
     
     if user_data.data and user_data.data[0].get("expires_at"):
         old_expires_str = user_data.data[0]["expires_at"]
         old_expires_date = datetime.datetime.fromisoformat(old_expires_str.replace('Z', '+00:00'))
         
-        # Если старый VIP еще НЕ истек, прибавляем 7 дней к ОСТАТКУ
         if old_expires_date > now:
             new_expires_at = old_expires_date + datetime.timedelta(days=30)
             
     expires_at_iso = new_expires_at.isoformat()
     
-    # 3. Обновляем базу данных новой датой
-    supabase.table("premium_drivers").update({
-        "expires_at": expires_at_iso
-    }).eq("user_id", user_id).execute()
+    # АСИНХРОННЫЙ ВЫЗОВ БД
+    await asyncio.to_thread(
+        lambda: supabase.table("premium_drivers").update({
+            "expires_at": expires_at_iso
+        }).eq("user_id", user_id).execute()
+    )
     
     await callback.message.edit_text(f"✅ Водитель {user_id} успешно получил/продлил VIP до {expires_at_iso[:10]}!")
     
-    # 4. Отправляем уведомление с новой датой
     try:
         await bot.send_message(
             chat_id=user_id, 
@@ -213,11 +214,9 @@ async def admin_approve_vip(callback: types.CallbackQuery):
 async def admin_reject_vip(callback: types.CallbackQuery, state: FSMContext):
     user_id = int(callback.data.split("_")[2])
     
-    # Запоминаем, кого именно мы отклоняем
     await state.update_data(reject_user_id=user_id)
     await state.set_state(AdminReject.waiting_for_reason)
     
-    # Просим админа написать причину
     await callback.message.answer(
         "✍️ <b>Напиши причину отказа текстом</b> (например: 'Чек эски' или 'Машинанын реалдуу сүрөтүн киргизиңиз').\n"
         "<i>Бул текст түз эле айдоочуга барат.</i>", 
@@ -227,7 +226,6 @@ async def admin_reject_vip(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(StateFilter(AdminReject.waiting_for_reason))
 async def handle_reject_reason(message: types.Message, state: FSMContext):
-    # Убеждаемся, что пишет админ
     if not ADMIN_ID or message.from_user.id != ADMIN_ID:
         return
         
@@ -235,10 +233,11 @@ async def handle_reject_reason(message: types.Message, state: FSMContext):
     user_id = data.get("reject_user_id")
     admin_reason = message.text
     
-    # Удаляем заявку из базы
-    supabase.table("premium_drivers").delete().eq("user_id", user_id).execute()
+    # АСИНХРОННЫЙ ВЫЗОВ БД
+    await asyncio.to_thread(
+        lambda: supabase.table("premium_drivers").delete().eq("user_id", user_id).execute()
+    )
     
-    # Отправляем сообщение водителю с твоей причиной
     user_text = (
         "❌ <b>Кечиресиз, сиздин VIP өтүнүчүңүз четке кагылды.</b>\n\n"
         f"💬 <b>Админдин комментарийи:</b>\n<i>{admin_reason}</i>\n\n"
@@ -251,7 +250,6 @@ async def handle_reject_reason(message: types.Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"❌ Ошибка отправки юзеру (возможно, он заблокировал бота): {e}")
         
-    # Очищаем состояние админа
     await state.clear()
 
 # --- АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ ---
@@ -263,10 +261,13 @@ async def add_vip_driver(message: types.Message):
         driver_id = int(message.caption.split()[1])
         photo_id = message.photo[-1].file_id
         
-        supabase.table("premium_drivers").upsert({
-            "user_id": driver_id,
-            "photo_file_id": photo_id
-        }).execute()
+        # АСИНХРОННЫЙ ВЫЗОВ БД
+        await asyncio.to_thread(
+            lambda: supabase.table("premium_drivers").upsert({
+                "user_id": driver_id,
+                "photo_file_id": photo_id
+            }).execute()
+        )
         
         await message.reply(f"✅ Водитель <code>{driver_id}</code> успешно добавлен в VIP-базу с этим фото!", parse_mode="HTML")
     
@@ -295,29 +296,28 @@ async def cmd_id(message: types.Message):
 # =====================================================================
 # --- ФУНКЦИЯ ДЛЯ ПАРСИНГА И ПУБЛИКАЦИИ ---
 # =====================================================================
-async def process_and_publish_ad(text_to_analyze: str, message: types.Message, msgs_to_delete: list = None):
+async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
     user_id = message.from_user.id
     
     prompt = f"""
-    Проанализируй текст объявления из кыргызской группы: "{text_to_analyze}"
+    Проанализируй текст объявления из кыргызской/русской группы такси: "{text_to_analyze}"
     
     Задача: Разобрать текст и строго вернуть JSON. 
     
     ПРАВИЛА ОПРЕДЕЛЕНИЯ РОЛИ:
     1. "жүргүнчү" (Пассажир - у него НЕТ машины, он хочет уехать):
-    - Фразы: "бир адам кетет", "1 адам кетет", "2 киши", "барат", "кетем".
-    - Если человек просто пишет "Бишкектен Таласка бир Адам кетет" — ОН ПАССАЖИР!
+    - Фразы: "бир адам кетет", "1 адам кетет", "барат", "кетем", "нужна машина".
+    - Важно: Если человек пишет маршрут и просто "кетет" без указания машины — он пассажир!
     
     2. "айдоочу" (Водитель - у него ЕСТЬ машина):
-    - Фразы: "киши керек", "адам керек", "орун бар", "салон бош".
-    - Марки авто: "К5", "Степ", "Камри", "Соната" и т.д.
+    - Фразы: "киши керек", "адам керек", "орун бар", "салон бош", "Кто: Водитель".
+    - Наличие ЛЮБОЙ марки авто (K5, Камри, BYD, Grandeur, Малибу, Степ и т.д.) = ВОДИТЕЛЬ.
     
-    СНАЧАЛА напиши логику в поле "reasoning" (почему ты так решил), а затем выдай "role".
+    3. "жүк ташуу" (Грузоперевозки) или "посылка" (Передача вещей).
 
     Верни JSON:
     {{
       "is_ad": boolean,
-      "reasoning": string,
       "role": string or null,
       "origin": string or null,
       "destination": string or null,
@@ -340,38 +340,20 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
         
         parsed_data = json.loads(response.choices[0].message.content)
         
-        # Если это не реклама поездки - возвращаем статус спама
         if not parsed_data.get("is_ad"):
             return "SPAM"
 
         role = parsed_data.get("role")
         
-        # ==========================================
-        # 🛡 БРОНЕБОЙНЫЙ КОНТРОЛЬ ОШИБОК GPT
-        # ==========================================
+        # Легкая защита от пассажиров
         text_lower = text_to_analyze.lower()
-        
-        # 1. ЗАЩИТА ПАССАЖИРОВ: Если пишет "адам кетет" / "барам" и нет машины -> ПАССАЖИР
-        if any(word in text_lower for word in ["адам кетет", "киши кетет", "барам", "кетем", "адам барат"]):
-            # Проверяем, точно ли нет упоминания машины или мест
-            if not any(car in text_lower for car in ["к5", "k5", "камри", "camry", "степ", "соната", "sonata", "орун", "бош", "машина", "алды"]):
+        if role == "айдоочу" and any(word in text_lower for word in ["адам кетет", "барам", "кетем", "адам барат"]):
+            if not parsed_data.get("car_model"): 
                 role = "жүргүнчү"
 
-        # 2. ПРИНУДИТЕЛЬНОЕ УТОЧНЕНИЕ: Заставляем бота переспросить!
-        # Если GPT решил, что это водитель, но в тексте ВООБЩЕ НЕТ маркеров машины или мест:
-        # 2. ПРИНУДИТЕЛЬНОЕ УТОЧНЕНИЕ: Заставляем бота переспросить!
-        if role == "айдоочу":
-            driver_markers = ["к5", "k5", "к7", "камри", "camry", "степ", "соната", "sonata", "орун", "бош", "алам", "керек", "машина", "алды", "портер", "спринтер", "место", "места", "передача"]
-            if not any(marker in text_lower for marker in driver_markers):
-                # Доказательств того, что это водитель, нет. Принудительно сбрасываем роль!
-                role = None
-        # ==========================================
-
-        # Если GPT сомневается (или мы ее заставили) и вернул null - требуем уточнения
         if not role:
-            return "NEEDS_CLARIFICATION"
+            return "SPAM"
 
-        # Собираем данные
         phone = parsed_data.get("phone_number") or "Номери жок"
         car_model = parsed_data.get("car_model") or "Көрсөтүлгөн жок"
         origin = parsed_data.get("origin") or "Такталган жок"
@@ -385,7 +367,6 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
         if clean_phone and not clean_phone.startswith('+') and clean_phone.replace('+','').isdigit():
             clean_phone = '+' + clean_phone
 
-        # Формируем красивый текст
         if role == "посылка":
             icon, role_name = "📦", "ПОСЫЛКА"
             text = (f"{icon} <b>{role_name}</b>\n\n"
@@ -410,62 +391,52 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
             text += (f"👥 <b>{label}</b>: {passenger_count}\n📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
                      f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
 
-# Удаляем черновики (само сообщение юзера и вопросы бота, если они были)
-        if msgs_to_delete is None:
-            msgs_to_delete = [message.message_id]
-        
-        for msg_id in msgs_to_delete:
-            try:
-                await bot.delete_message(message.chat.id, msg_id)
-            except Exception:
-                pass
+        # Удаляем черновик (само сообщение юзера)
+        try:
+            await bot.delete_message(message.chat.id, message.message_id)
+        except Exception:
+            pass
 
-        # ==========================================
-        # 👑 БИЗНЕС-ЛОГИКА: ЛИМИТЫ И VIP
-        # ==========================================
         now = datetime.datetime.now(TZ_BISHKEK)
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-        # 1. Считаем, сколько постов юзер УЖЕ сделал сегодня
-        daily_count_res = supabase.table(TAXI_TABLE).select("id", count="exact") \
+        # 1. АСИНХРОННЫЙ ВЫЗОВ БД (Считаем посты за день)
+        daily_count_res = await asyncio.to_thread(
+            lambda: supabase.table(TAXI_TABLE).select("id", count="exact")
             .eq("user_id", user_id).eq("role", role).gte("created_at", start_of_day).execute()
+        )
         posts_today = daily_count_res.count or 0
 
-        # 2. Проверяем статус VIP и срок его действия
+        # 2. АСИНХРОННЫЙ ВЫЗОВ БД (Проверяем VIP)
         is_vip = False
         photo_file_id = None
         
-        vip_res = supabase.table("premium_drivers").select("photo_file_id, expires_at").eq("user_id", user_id).execute()
+        vip_res = await asyncio.to_thread(
+            lambda: supabase.table("premium_drivers").select("photo_file_id, expires_at").eq("user_id", user_id).execute()
+        )
         
         if vip_res.data:
             expires_at_str = vip_res.data[0].get("expires_at")
             if expires_at_str:
-                # Парсим время из БД (Supabase отдает формат ISO 8601)
                 expires_at = datetime.datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
                 if expires_at > now:
                     is_vip = True
                     photo_file_id = vip_res.data[0]["photo_file_id"]
 
-        # 3. ПРОВЕРКА ЛИМИТА: Если не VIP и это уже 4-й пост (лимит 3)
-        # Ограничиваем ТОЛЬКО водителей ("айдоочу") и грузоперевозки ("жүк ташуу")
+        # 3. ПРОВЕРКА ЛИМИТА
         if not is_vip and posts_today >= 3 and role in ["айдоочу", "жүк ташуу"]:
-            
-            # Меняем текст, чтобы он подходил и таксистам, и грузовикам
             role_display = "унааңыздын" if role == "айдоочу" else "жүк ташуучу унааңыздын"
-            
             limit_text = (
                 f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү (3/3).</b>\n\n"
                 f"Жарыяңыз киргизилген жок. Чектөөсүз жарыя жазуу жана <b>{role_display} сүрөтүн</b> кошуу үчүн <b>VIP-статус</b> сатып алыңыз!\n\n"
                 "👇 VIP алуу үчүн төмөнкү баскычты басыңыз:"
             )
             
-            # Отправляем сообщение-уведомление прямо в группу
             limit_builder = InlineKeyboardBuilder()
             limit_builder.row(types.InlineKeyboardButton(text="👑 VIP алуу", url=f"{BOT_LINK}?start=buy_vip"))
             
             warning_msg = await bot.send_message(chat_id=message.chat.id, text=limit_text, parse_mode="HTML", reply_markup=limit_builder.as_markup())
             
-            # Удаляем предупреждение через 2 минуты, чтобы не засорять чат
             async def delete_warning(chat_id, msg_id):
                 await asyncio.sleep(120)
                 try:
@@ -476,24 +447,20 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
             
             return "LIMIT_REACHED"
 
-        # ==========================================
-        # 📤 ПУБЛИКАЦИЯ ПОСТА И СОХРАНЕНИЕ
-        # ==========================================
-        
-        # Общая аналитика постов юзера (за все время)
-        count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
+        # 4. АСИНХРОННЫЙ ВЫЗОВ БД (Общий счетчик)
+        count_res = await asyncio.to_thread(
+            lambda: supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
+        )
         post_count = (count_res.count or 0) + 1
 
-        # --- НОВЫЙ БЛОК: ДОБАВЛЯЕМ СЧЕТЧИК ЛИМИТОВ В КОНЕЦ ТЕКСТА ---
         if role in ["айдоочу", "жүк ташуу"]:
             if is_vip:
                 text += "\n\n<i>👑 Сизде VIP-статус (чектөөсүз)</i>"
             else:
                 remaining = 3 - (posts_today + 1)
                 text += f"\n\n<i>⚠️ Бүгүнкү акысыз жарыялар: {remaining}/3 калды</i>"
-        # -----------------------------------------------------------
 
-        # Отправка самого поста в группу (с фото, если VIP)
+        # Отправка поста
         if is_vip and role == "айдоочу" and photo_file_id:
             try:
                 msg = await bot.send_photo(chat_id=message.chat.id, photo=photo_file_id, caption=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
@@ -502,7 +469,6 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
         else:
             msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
   
-        # Сохранение в БД
         db_payload = {
             "user_id": user_id, "role": role, "origin": origin, "destination": destination,
             "time": time, "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
@@ -510,7 +476,11 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
             "message_id": msg.message_id, "post_count": post_count,
             "created_at": now.isoformat()
         }
-        supabase.table(TAXI_TABLE).insert(db_payload).execute()
+        
+        # 5. АСИНХРОННЫЙ ВЫЗОВ БД (Сохранение)
+        await asyncio.to_thread(
+            lambda: supabase.table(TAXI_TABLE).insert(db_payload).execute()
+        )
         
         return "SUCCESS"
 
@@ -519,14 +489,20 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
         return "ERROR"
 
 # =====================================================================
-# --- ХЭНДЛЕР №1: Ловит ОБЫЧНЫЕ сообщения ---
+# --- ХЭНДЛЕР №1: Ловит ОБЫЧНЫЕ сообщения (и текст, и фото с текстом) ---
 # =====================================================================
-@dp.message(F.text & ~F.text.startswith('/'), StateFilter(None))
+@dp.message((F.text | F.caption) & ~F.text.startswith('/'), StateFilter(None))
 async def handle_new_ad(message: types.Message, state: FSMContext):
-    text_lower = message.text.lower()
+    # Достаем текст, даже если это подпись к фото
+    text_to_process = message.text or message.caption
+    
+    if not text_to_process:
+        return
+        
+    text_lower = text_to_process.lower()
     
     # 1. Фильтр коротких сообщений и ссылок (АДМИНА НЕ ТРОГАЕМ)
-    if "http" in text_lower or "t.me" in text_lower or "www." in text_lower or len(message.text.split()) < 3:
+    if "http" in text_lower or "t.me" in text_lower or "www." in text_lower or len(text_to_process.split()) < 3:
         if not ADMIN_ID or message.from_user.id != ADMIN_ID:
             try:
                 await message.delete()
@@ -535,54 +511,26 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
         return 
 
     # Отправляем в функцию парсинга
-    status = await process_and_publish_ad(message.text, message)
+    status = await process_and_publish_ad(text_to_process, message)
 
-    if status == "NEEDS_CLARIFICATION":
-        bot_msg = await message.reply("🤔 Урматтуу колдонуучу, сиз **айдоочусузбу** же **жүргүнчүсүзбү**? (Ушул смске жооп жазып, тактап коюңуз)", parse_mode="Markdown")
-        await state.set_state(AdClarification.waiting_for_role)
-        await state.update_data(
-            original_text=message.text,
-            original_msg_id=message.message_id,
-            bot_msg_id=bot_msg.message_id
-        )
-    # 2. Если GPT решил, что это просто спам/общение (АДМИНА НЕ ТРОГАЕМ)
-    elif status == "SPAM":
+    # 2. Если GPT решил, что это просто спам/общение
+    if status == "SPAM":
         if not ADMIN_ID or message.from_user.id != ADMIN_ID:
             try:
                 await message.delete()
             except:
                 pass
+    elif status == "ERROR":
+        # Опционально: можно уведомить пользователя об ошибке
+        logging.error("Объявление не обработано из-за ошибки GPT/БД")
 
-# =====================================================================
-# --- ХЭНДЛЕР №2: Ловит ОТВЕТ пользователя на вопрос бота ---
-# =====================================================================
-@dp.message(StateFilter(AdClarification.waiting_for_role))
-async def handle_clarification_reply(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    original_text = data.get("original_text")
-    original_msg_id = data.get("original_msg_id")
-    bot_msg_id = data.get("bot_msg_id")
 
-    # Склеиваем так, чтобы маркер "айдоочу" точно попал в текст для фильтра
-    combined_text = f"{original_text}\n(Колдонуучунун тактоосу: {message.text})"
-    msgs_to_delete = [original_msg_id, bot_msg_id, message.message_id]
-
-    await state.clear()
-
-    # Отправляем на публикацию и проверяем статус!
-    status = await process_and_publish_ad(combined_text, message, msgs_to_delete)
-
-    # Если даже после уточнения ничего не вышло, пишем юзеру об этом, а не молчим
-    if status == "NEEDS_CLARIFICATION":
-        await message.answer("❌ Кечиресиз, маалымат дагы деле толук эмес. Жарыяңызды кайра баштан, унааңызды же жүргүнчү экениңизди так жазып киргизиңиз.")
-
-# --- УДАЛЕНИЕ МУСОРА (Стикеры, фото, видео и т.д.) ---
+# --- УДАЛЕНИЕ МУСОРА (Стикеры, фото без текста, видео и т.д.) ---
 @dp.message()
 async def delete_all_other_messages(message: types.Message):
     if message.chat.type == 'private':
         return
         
-    # 3. Админ может скидывать любые фото/стикеры/видео (АДМИНА НЕ ТРОГАЕМ)
     if ADMIN_ID and message.from_user.id == ADMIN_ID:
         return
         
