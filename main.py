@@ -425,6 +425,15 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
         count_res = supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
         post_count = (count_res.count or 0) + 1
 
+        # --- НОВЫЙ БЛОК: ДОБАВЛЯЕМ СЧЕТЧИК ЛИМИТОВ В КОНЕЦ ТЕКСТА ---
+        if role in ["айдоочу", "жүк ташуу"]:
+            if is_vip:
+                text += "\n\n<i>👑 Сизде VIP-статус (чектөөсүз)</i>"
+            else:
+                remaining = 3 - (posts_today + 1)
+                text += f"\n\n<i>⚠️ Бүгүнкү акысыз жарыялар: {remaining}/3 калды</i>"
+        # -----------------------------------------------------------
+
         # Отправка самого поста в группу (с фото, если VIP)
         if is_vip and role == "айдоочу" and photo_file_id:
             try:
@@ -433,7 +442,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
                 msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
         else:
             msg = await bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", reply_markup=get_channel_publish_kb())
-
+  
         # Сохранение в БД
         db_payload = {
             "user_id": user_id, "role": role, "origin": origin, "destination": destination,
