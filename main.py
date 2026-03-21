@@ -113,6 +113,15 @@ async def cmd_start(message: types.Message, state: FSMContext):
     else:
         await message.answer("👋 Саламатсызбы! Мен группадан жарыяларды автоматтык түрдө түзүүчү ботмун.")
 
+# --- ЗАЩИТА ОТ ДУРАКА: Ловим PDF, файлы, текст и стикеры ---
+@dp.message(~F.photo, StateFilter(BuyVIP.waiting_for_receipt, BuyVIP.waiting_for_car_photo))
+async def handle_invalid_format(message: types.Message):
+    await message.answer(
+        "⚠️ <b>Кечиресиз, файл, PDF же текст кабыл алынбайт.</b>\n\n"
+        "Сураныч, чекти (же унаанын сүрөтүн) кадимки <b>сүрөт (скриншот)</b> кылып жөнөтүңүз 📸", 
+        parse_mode="HTML"
+    )
+
 @dp.message(F.photo, StateFilter(BuyVIP.waiting_for_receipt))
 async def handle_receipt(message: types.Message, state: FSMContext):
     receipt_photo_id = message.photo[-1].file_id
