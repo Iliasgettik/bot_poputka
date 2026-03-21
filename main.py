@@ -359,8 +359,9 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message, m
 
         # 2. ПРИНУДИТЕЛЬНОЕ УТОЧНЕНИЕ: Заставляем бота переспросить!
         # Если GPT решил, что это водитель, но в тексте ВООБЩЕ НЕТ маркеров машины или мест:
+        # 2. ПРИНУДИТЕЛЬНОЕ УТОЧНЕНИЕ: Заставляем бота переспросить!
         if role == "айдоочу":
-            driver_markers = ["к5", "k5", "к7", "камри", "camry", "степ", "соната", "sonata", "орун", "бош", "алам", "керек", "машина", "алды", "портер", "спринтер"]
+            driver_markers = ["к5", "k5", "к7", "камри", "camry", "степ", "соната", "sonata", "орун", "бош", "алам", "керек", "машина", "алды", "портер", "спринтер", "место", "места", "передача"]
             if not any(marker in text_lower for marker in driver_markers):
                 # Доказательств того, что это водитель, нет. Принудительно сбрасываем роль!
                 role = None
@@ -562,11 +563,18 @@ async def handle_clarification_reply(message: types.Message, state: FSMContext):
     original_msg_id = data.get("original_msg_id")
     bot_msg_id = data.get("bot_msg_id")
 
-    combined_text = f"Оригинальное сообщение: {original_text}\nУточнение от пользователя: {message.text}"
+    # Склеиваем так, чтобы маркер "айдоочу" точно попал в текст для фильтра
+    combined_text = f"{original_text}\n(Колдонуучунун тактоосу: {message.text})"
     msgs_to_delete = [original_msg_id, bot_msg_id, message.message_id]
-    
+
     await state.clear()
-    await process_and_publish_ad(combined_text, message, msgs_to_delete)
+
+    # Отправляем на публикацию и проверяем статус!
+    status = await process_and_publish_ad(combined_text, message, msgs_to_delete)
+
+    # Если даже после уточнения ничего не вышло, пишем юзеру об этом, а не молчим
+    if status == "NEEDS_CLARIFICATION":
+        await message.answer("❌ Кечиресиз, маалымат дагы деле толук эмес. Жарыяңызды кайра баштан, унааңызды же жүргүнчү экениңизди так жазып киргизиңиз.")
 
 # --- УДАЛЕНИЕ МУСОРА (Стикеры, фото, видео и т.д.) ---
 @dp.message()
