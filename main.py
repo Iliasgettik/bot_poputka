@@ -89,7 +89,7 @@ async def cleanup_old_messages():
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
-    builder.row(types.InlineKeyboardButton(text="👑 VIP алуу (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
+    builder.row(types.InlineKeyboardButton(text="👑 Тариф тандоо (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
     return builder.as_markup()
 
 # --- КОМАНДА /start ---
@@ -105,11 +105,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
             
     elif message.text and "buy_vip" in message.text:
         text = (
-            "👑 <b>VIP-статус сатып алуу</b>\n\n"
-            "VIP-статус сизге чектөөсүз жарыя киргизүүгө жана <b>унааңыздын сүрөтүн</b> кошууга мүмкүнчүлүк берет!\n\n"
-            "💳 <b>Баасы:</b> 200 сом (1 айга)\n"
+            "<b>🚗 Сүрөтү менен жарыя киргизүү (Тарифтер)</b>\n\n"
+            "Сүрөтү бар жарыялар кардарды тезирээк табат! Өзүңүзгө ыңгайлуу тарифти тандаңыз:\n\n"
+            "🥉 <b>Базалык:</b> 50 сом (3 күнгө)\n"
+            "🥈 <b>Комфорт:</b> 100 сом (7 күнгө)\n"
+            "👑 <b>VIP:</b> 200 сом (30 күнгө - <i>эң пайдалуу!</i>)\n\n"
             "🏦 <b>MBank номери:</b> <code>+996555905044</code> (Аты-жөнү: Ильяс Р.)\n\n"
-            "👇 Төлөмдү жүргүзгөндөн кийин, <b>чекдин сүрөтүн ушул жакка жөнөтүңүз</b>."
+            "👇 Төлөмдү жүргүзгөндөн кийин, <b>чекдин сүрөтүн ушул жакка жөнөтүңүз</b>. Админ чектеги суммага карап тарифиңизди кошуп берет."
         )
         await message.answer(text, parse_mode="HTML")
         await state.set_state(BuyVIP.waiting_for_receipt)
@@ -143,13 +145,17 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     username = message.from_user.username or "Без юзернейма"
     
+    # Внутри функции handle_car_photo найди этот кусок и замени:
+
     builder = InlineKeyboardBuilder()
     builder.row(
-        types.InlineKeyboardButton(text="✅ Одобрить (30 дней)", callback_data=f"approve_vip_{user_id}"),
-        types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_vip_{user_id}")
+        types.InlineKeyboardButton(text="✅ 3 дня", callback_data=f"apprvip_3_{user_id}"),
+        types.InlineKeyboardButton(text="✅ 7 дней", callback_data=f"apprvip_7_{user_id}"),
+        types.InlineKeyboardButton(text="✅ 30 дней", callback_data=f"apprvip_30_{user_id}")
     )
+    builder.row(types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_vip_{user_id}"))
     
-    admin_text = f"🆕 <b>Заявка на VIP!</b>\n👤 Юзер: @{username} (<code>{user_id}</code>)\n\nВложил 2 фото (чек и авто). Выбери действие:"
+    admin_text = f"🆕 <b>Заявка на Тариф!</b>\n👤 Юзер: @{username} (<code>{user_id}</code>)\n\nСмотри чек: сколько оплатил, на столько дней и одобряй:"
     
     media = [
         types.InputMediaPhoto(media=receipt_photo_id, caption="📸 ЧЕК"),
@@ -170,10 +176,13 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
     await message.answer("⏳ Рахмат! Сиздин маалыматыңыз текшерүүгө жөнөтүлдү. Администратор тастыктагандан кийин сизге билдирүү келет.")
     await state.clear()
 
-
-@dp.callback_query(F.data.startswith("approve_vip_"))
+@dp.callback_query(F.data.startswith("apprvip_"))
 async def admin_approve_vip(callback: types.CallbackQuery):
-    user_id = int(callback.data.split("_")[2])
+    # Разбираем callback_data (например, "apprvip_3_1234567")
+    parts = callback.data.split("_")
+    days_to_add = int(parts[1])
+    user_id = int(parts[2])
+    
     now = datetime.datetime.now(TZ_BISHKEK)
     
     # АСИНХРОННЫЙ ВЫЗОВ БД
@@ -181,14 +190,14 @@ async def admin_approve_vip(callback: types.CallbackQuery):
         lambda: supabase.table("premium_drivers").select("expires_at").eq("user_id", user_id).execute()
     )
     
-    new_expires_at = now + datetime.timedelta(days=30)
+    new_expires_at = now + datetime.timedelta(days=days_to_add)
     
     if user_data.data and user_data.data[0].get("expires_at"):
         old_expires_str = user_data.data[0]["expires_at"]
         old_expires_date = datetime.datetime.fromisoformat(old_expires_str.replace('Z', '+00:00'))
         
         if old_expires_date > now:
-            new_expires_at = old_expires_date + datetime.timedelta(days=30)
+            new_expires_at = old_expires_date + datetime.timedelta(days=days_to_add)
             
     expires_at_iso = new_expires_at.isoformat()
     
@@ -199,12 +208,12 @@ async def admin_approve_vip(callback: types.CallbackQuery):
         }).eq("user_id", user_id).execute()
     )
     
-    await callback.message.edit_text(f"✅ Водитель {user_id} успешно получил/продлил VIP до {expires_at_iso[:10]}!")
+    await callback.message.edit_text(f"✅ Водитель {user_id} успешно получил тариф на {days_to_add} дней (до {expires_at_iso[:10]})!")
     
     try:
         await bot.send_message(
             chat_id=user_id, 
-            text=f"🎉 <b>Куттуктайбыз!</b> Сиздин төлөмүңүз тастыкталды.\n\nСиздин VIP-статусуңуз <b>{expires_at_iso[:10]}</b> күнүнө чейин узартылды/берилди. Эми группага жазган жарыяларыңыз чектөөсүз жана унааңыздын сүрөтү менен чыгат!", 
+            text=f"🎉 <b>Куттуктайбыз!</b> Сиздин төлөмүңүз тастыкталды.\n\nСиздин тарифиңиз <b>{expires_at_iso[:10]}</b> күнүнө чейин иштетилди. Эми жарыяларыңыз чектөөсүз жана унааңыздын сүрөтү менен чыгат!", 
             parse_mode="HTML"
         )
     except Exception as e:
@@ -313,7 +322,12 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
     - Фразы: "киши керек", "адам керек", "орун бар", "салон бош", "Кто: Водитель".
     - Наличие ЛЮБОЙ марки авто (K5, Камри, BYD, Grandeur, Малибу, Степ и т.д.) = ВОДИТЕЛЬ.
     
-    3. "жүк ташуу" (Грузоперевозки) или "посылка" (Передача вещей).
+    3. "посылка" (Передача мелких вещей, документов, сумок):
+    - Фразы: "передача бар", "посылка", "документ", "передать", "сумка берем".
+    
+    4. "жүк ташуу" (Грузоперевозки - тяжелый груз, мебель, переезды):
+    - Клиент (ищет грузовик): "жүк бар", "портер керек", "газель керек", "көчүш керек".
+    - Водитель грузовика (ищет груз): "портер бар", "жүк алам", "бош портер", "газель".
 
     Верни JSON:
     {{
