@@ -442,12 +442,12 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
             role_display = "унааңыздын" if role == "айдоочу" else "жүк ташуучу унааңыздын"
             limit_text = (
                 f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү (3/3).</b>\n\n"
-                f"Жарыяңыз киргизилген жок. Чектөөсүз жарыя жазуу жана <b>{role_display} сүрөтүн</b> кошуу үчүн <b>VIP-статус</b> сатып алыңыз!\n\n"
-                "👇 VIP алуу үчүн төмөнкү баскычты басыңыз:"
+                f"Жарыяңыз киргизилген жок. Чектөөсүз жарыя жазуу жана <b>{role_display} сүрөтүн</b> кошуу үчүн өзүңүзгө ыңгайлуу <b>Тариф</b> кошуп алыңыз!\n\n"
+                "👇 Тариф тандоо үчүн төмөнкү баскычты басыңыз:"
             )
             
             limit_builder = InlineKeyboardBuilder()
-            limit_builder.row(types.InlineKeyboardButton(text="👑 VIP алуу", url=f"{BOT_LINK}?start=buy_vip"))
+            limit_builder.row(types.InlineKeyboardButton(text="💳 Тариф тандоо (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
             
             warning_msg = await bot.send_message(chat_id=message.chat.id, text=limit_text, parse_mode="HTML", reply_markup=limit_builder.as_markup())
             
