@@ -559,6 +559,9 @@ async def main():
     asyncio.create_task(cleanup_old_messages())
     asyncio.create_task(weather_background_task(bot, CHANNEL_ID))
     
+    # +++ ДОБАВЛЯЕМ ЭТУ СТРОЧКУ +++
+    await bot.delete_webhook(drop_pending_updates=True)
+    
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
