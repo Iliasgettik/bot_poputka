@@ -507,7 +507,14 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 # =====================================================================
 @dp.message((F.text | F.caption) & ~F.text.startswith('/'), StateFilter(None))
 async def handle_new_ad(message: types.Message, state: FSMContext):
-    # Достаем текст, даже если это подпись к фото
+    
+    # +++ ГЛАВНАЯ СТРОЧКА +++
+    # Если пишет АДМИН — бот просто выходит и ничего не делает!
+    # Сообщение остается в группе в оригинальном виде.
+    if ADMIN_ID and message.from_user.id == ADMIN_ID:
+        return
+        
+    # Достаем текст для всех остальных юзеров
     text_to_process = message.text or message.caption
     
     if not text_to_process:
@@ -515,25 +522,23 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
         
     text_lower = text_to_process.lower()
     
-    # 1. Фильтр коротких сообщений и ссылок (АДМИНА НЕ ТРОГАЕМ)
+    # 1. Фильтр коротких сообщений и ссылок (для обычных юзеров)
     if "http" in text_lower or "t.me" in text_lower or "www." in text_lower or len(text_to_process.split()) < 3:
-        if not ADMIN_ID or message.from_user.id != ADMIN_ID:
-            try:
-                await message.delete()
-            except:
-                pass
+        try:
+            await message.delete()
+        except:
+            pass
         return 
 
-    # Отправляем в функцию парсинга
+    # Отправляем в функцию парсинга (только обычных юзеров)
     status = await process_and_publish_ad(text_to_process, message)
 
     # 2. Если GPT решил, что это просто спам/общение
     if status == "SPAM":
-        if not ADMIN_ID or message.from_user.id != ADMIN_ID:
-            try:
-                await message.delete()
-            except:
-                pass
+        try:
+            await message.delete()
+        except:
+            pass
     elif status == "ERROR":
         # Опционально: можно уведомить пользователя об ошибке
         logging.error("Объявление не обработано из-за ошибки GPT/БД")
@@ -561,7 +566,7 @@ async def main():
     
     # +++ ДОБАВЛЯЕМ ЭТУ СТРОЧКУ +++
     await bot.delete_webhook(drop_pending_updates=True)
-    
+
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
