@@ -463,12 +463,32 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 return "LIMIT_REACHED"
             
             # Сценарий Б: Попутчик үчүн лимит (15 жарыя)
-            elif not is_taxi_driver and posts_today >= 15:
-                await bot.send_message(
-                    message.chat.id, 
-                    f"⚠️ <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, сиз бүгүн өтө көп жарыя киргиздиңиз (15). Спамдын алдын алуу үчүн бүгүнкүгө лимит коюлду.",
-                    parse_mode="HTML"
+        elif not is_taxi_driver and posts_today >= 15:
+                poputchik_limit_text = (
+                    f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү (15/15).</b>\n\n"
+                    f"Күндүк чектөө коюлду. Эгерде жарыяларды чектөөсүз киргизип, <b>{role_display} сүрөтүн</b> кошкуңуз келсе, <b>Тариф</b> кошуп алыңыз!\n\n"
+                    "👇 Тариф тандоо үчүн төмөнкү баскычты басыңыз:"
                 )
+                
+                limit_builder = InlineKeyboardBuilder()
+                limit_builder.row(types.InlineKeyboardButton(text="💳 Тариф тандоо (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
+                
+                warning_msg = await bot.send_message(
+                    chat_id=message.chat.id, 
+                    text=poputchik_limit_text, 
+                    parse_mode="HTML", 
+                    reply_markup=limit_builder.as_markup()
+                )
+                
+                # Билдирүүнү 2 мүнөттөн кийин өчүрүү
+                async def delete_warning(chat_id, msg_id):
+                    await asyncio.sleep(120)
+                    try:
+                        await bot.delete_message(chat_id, msg_id)
+                    except:
+                        pass
+                asyncio.create_task(delete_warning(warning_msg.chat.id, warning_msg.message_id))
+                
                 return "LIMIT_REACHED"
         
 
