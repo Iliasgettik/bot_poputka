@@ -421,6 +421,26 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         )
         posts_today = daily_count_res.count or 0
 
+        # 1.5. АСИНХРОННЫЙ ВЫЗОВ БД (Считаем АКТИВНЫЕ ДНИ за последние 7 дней)
+        seven_days_ago = (now - datetime.timedelta(days=7)).isoformat()
+        weekly_posts_res = await asyncio.to_thread(
+            lambda: supabase.table(TAXI_TABLE).select("created_at")
+            .eq("user_id", user_id).eq("role", role).gte("created_at", seven_days_ago).execute()
+        )
+        
+        # Вычисляем уникальные дни активности (по времени Бишкека)
+        unique_days = set()
+        unique_days.add(now.date()) # Добавляем сегодняшний день сразу
+        
+        if weekly_posts_res.data:
+            for record in weekly_posts_res.data:
+                dt_utc = datetime.datetime.fromisoformat(record["created_at"].replace('Z', '+00:00'))
+                dt_bishkek = dt_utc.astimezone(TZ_BISHKEK)
+                unique_days.add(dt_bishkek.date())
+                
+        active_days_count = len(unique_days)
+
+
         # 2. АСИНХРОННЫЙ ВЫЗОВ БД (Проверяем VIP)
         is_vip = False
         photo_file_id = None
@@ -436,29 +456,52 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 if expires_at > now:
                     is_vip = True
                     photo_file_id = vip_res.data[0]["photo_file_id"]
-
+                    
         # 3. ПРОВЕРКА ЛИМИТА
-        if not is_vip and posts_today >= 3 and role in ["айдоочу", "жүк ташуу"]:
+        is_taxi_driver = active_days_count >= 3
+
+        if not is_vip and role in ["айдоочу", "жүк ташуу"]:
             role_display = "унааңыздын" if role == "айдоочу" else "жүк ташуучу унааңыздын"
-            limit_text = (
-                f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү (3/3).</b>\n\n"
-                f"Жарыяңыз киргизилген жок. Чектөөсүз жарыя жазуу жана <b>{role_display} сүрөтүн</b> кошуу үчүн өзүңүзгө ыңгайлуу <b>Тариф</b> кошуп алыңыз!\n\n"
-                "👇 Тариф тандоо үчүн төмөнкү баскычты басыңыз:"
-            )
             
-            limit_builder = InlineKeyboardBuilder()
-            limit_builder.row(types.InlineKeyboardButton(text="💳 Тариф тандоо (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
+            # +++ УШУЛ САПТАР КОШУЛУШУ КЕРЕК +++
+            # Сценарий А: Таксист үчүн лимит (3 жарыя)
+            if is_taxi_driver and posts_today >= 3:
+                limit_text = (
+                    f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү.</b>\n\n"
+                    f"Система сизди туруктуу айдоочу катары тааныды (жумасына 3 күндөн ашык иштейсиз). Чектөөсүз жарыя жазуу жана <b>{role_display} сүрөтүн</b> кошуу үчүн <b>Тариф</b> кошуп алыңыз!\n\n"
+                    "👇 Тариф тандоо үчүн төмөнкү баскычты басыңыз:"
+                )
+                
+                limit_builder = InlineKeyboardBuilder()
+                limit_builder.row(types.InlineKeyboardButton(text="💳 Тариф тандоо (Сүрөт кошуу)", url=f"{BOT_LINK}?start=buy_vip"))
+                
+                warning_msg = await bot.send_message(chat_id=message.chat.id, text=limit_text, parse_mode="HTML", reply_markup=limit_builder.as_markup())
+                
+                async def delete_warning(chat_id, msg_id):
+                    await asyncio.sleep(120)
+                    try:
+                        await bot.delete_message(chat_id, msg_id)
+                    except:
+                        pass
+                asyncio.create_task(delete_warning(warning_msg.chat.id, warning_msg.message_id))
+                return "LIMIT_REACHED"
             
-            warning_msg = await bot.send_message(chat_id=message.chat.id, text=limit_text, parse_mode="HTML", reply_markup=limit_builder.as_markup())
-            
-            async def delete_warning(chat_id, msg_id):
-                await asyncio.sleep(120)
-                try:
-                    await bot.delete_message(chat_id, msg_id)
-                except:
-                    pass
-            asyncio.create_task(delete_warning(warning_msg.chat.id, warning_msg.message_id))
-            
+            # Сценарий Б: Попутчик үчүн лимит (15 жарыя)
+            elif not is_taxi_driver and posts_today >= 15:
+                await bot.send_message(
+                    message.chat.id, 
+                    f"⚠️ <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, сиз бүгүн өтө көп жарыя киргиздиңиз (15). Спамдын алдын алуу үчүн бүгүнкүгө лимит коюлду.",
+                    parse_mode="HTML"
+                )
+                return "LIMIT_REACHED"
+        
+        # Сценарий Б: Это Попутчик (активен 1-2 дня), но он перешел границу в 15 постов
+        elif not is_taxi_driver and posts_today >= 15:
+            await bot.send_message(
+                    message.chat.id, 
+                    f"⚠️ <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, сиз бүгүн өтө көп жарыя киргиздиңиз (15). Спамдын алдын алуу үчүн бүгүнкүгө лимит коюлду.",
+                    parse_mode="HTML"
+                )
             return "LIMIT_REACHED"
 
         # 4. АСИНХРОННЫЙ ВЫЗОВ БД (Общий счетчик)
@@ -467,12 +510,17 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         )
         post_count = (count_res.count or 0) + 1
 
+        # Формируем подпись для поста
         if role in ["айдоочу", "жүк ташуу"]:
             if is_vip:
                 text += "\n\n<i>👑 Сизде VIP-статус (чектөөсүз)</i>"
             else:
-                remaining = 3 - (posts_today + 1)
-                text += f"\n\n<i>⚠️ Бүгүнкү акысыз жарыялар: {remaining}/3 калды</i>"
+                if is_taxi_driver:
+                    remaining = 3 - (posts_today + 1)
+                    text += f"\n\n<i>⚠️ Бүгүнкү акысыз жарыялар: {remaining} калды</i>"
+                else:
+                    remaining_poputchik = 15 - (posts_today + 1)
+                    text += f"\n\n<i>🆓 Попутчик режими: бүгүн {remaining_poputchik} калды</i>"
 
         # Отправка поста
         if is_vip and role == "айдоочу" and photo_file_id:
