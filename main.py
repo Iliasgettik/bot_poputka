@@ -463,7 +463,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 return "LIMIT_REACHED"
             
             # Сценарий Б: Попутчик үчүн лимит (15 жарыя)
-        elif not is_taxi_driver and posts_today >= 3:
+        elif not is_taxi_driver and posts_today >= 15:
                 poputchik_limit_text = (
                     f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү (15/15).</b>\n\n"
                     f"Күндүк чектөө коюлду. Эгерде жарыяларды чектөөсүз киргизип, <b>{role_display} сүрөтүн</b> кошкуңуз келсе, <b>Тариф</b> кошуп алыңыз!\n\n"
