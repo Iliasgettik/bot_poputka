@@ -261,30 +261,6 @@ async def handle_reject_reason(message: types.Message, state: FSMContext):
         
     await state.clear()
 
-# --- АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ ---
-@dp.message(F.photo & F.caption.startswith('/addvip'))
-async def add_vip_driver(message: types.Message):
-    if not ADMIN_ID or message.from_user.id != ADMIN_ID:
-        return
-    try:
-        driver_id = int(message.caption.split()[1])
-        photo_id = message.photo[-1].file_id
-        
-        # АСИНХРОННЫЙ ВЫЗОВ БД
-        await asyncio.to_thread(
-            lambda: supabase.table("premium_drivers").upsert({
-                "user_id": driver_id,
-                "photo_file_id": photo_id
-            }).execute()
-        )
-        
-        await message.reply(f"✅ Водитель <code>{driver_id}</code> успешно добавлен в VIP-базу с этим фото!", parse_mode="HTML")
-    
-    except IndexError:
-        await message.reply("❌ Ошибка формата. Отправь фото, а в подписи (caption) напиши:\n`/addvip ID_ВОДИТЕЛЯ`", parse_mode="Markdown")
-    except Exception as e:
-        await message.reply(f"❌ Ошибка при добавлении в базу: {e}")
-
 
 # --- КОМАНДА /id ---
 @dp.message(Command("id"))
@@ -456,7 +432,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 if expires_at > now:
                     is_vip = True
                     photo_file_id = vip_res.data[0]["photo_file_id"]
-                    
+
         # 3. ПРОВЕРКА ЛИМИТА
         is_taxi_driver = active_days_count >= 3
 
@@ -495,14 +471,6 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 )
                 return "LIMIT_REACHED"
         
-        # Сценарий Б: Это Попутчик (активен 1-2 дня), но он перешел границу в 15 постов
-        elif not is_taxi_driver and posts_today >= 15:
-            await bot.send_message(
-                    message.chat.id, 
-                    f"⚠️ <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, сиз бүгүн өтө көп жарыя киргиздиңиз (15). Спамдын алдын алуу үчүн бүгүнкүгө лимит коюлду.",
-                    parse_mode="HTML"
-                )
-            return "LIMIT_REACHED"
 
         # 4. АСИНХРОННЫЙ ВЫЗОВ БД (Общий счетчик)
         count_res = await asyncio.to_thread(
