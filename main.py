@@ -498,16 +498,18 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         )
         post_count = (count_res.count or 0) + 1
 
-        # Формируем подпись для поста
+       # Формируем подпись для поста
         if role in ["айдоочу", "жүк ташуу"]:
             if is_vip:
                 text += "\n\n<i>👑 Сизде VIP-статус (чектөөсүз)</i>"
             else:
                 if is_taxi_driver:
-                    remaining = 3 - (posts_today + 1)
+                    # Функция max(0, ...) не даст числу уйти в минус
+                    remaining = max(0, 3 - (posts_today + 1))
                     text += f"\n\n<i>⚠️ Бүгүнкү акысыз жарыялар: {remaining} калды</i>"
                 else:
-                    remaining_poputchik = 15 - (posts_today + 1)
+                    # Функция max(0, ...) не даст числу уйти в минус
+                    remaining_poputchik = max(0, 15 - (posts_today + 1))
                     text += f"\n\n<i>🆓 Попутчик режими: бүгүн {remaining_poputchik} калды</i>"
 
         # Отправка поста
