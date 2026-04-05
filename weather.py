@@ -4,6 +4,8 @@ import aiohttp
 import logging
 from aiogram import Bot
 
+weather_click_count = 0
+
 # Список локаций
 LOCATIONS = [
     {"icon": "🏙", "name": "Бишкек", "query": "q=Bishkek"},
@@ -96,3 +98,8 @@ async def weather_background_task(bot: Bot, channel_id: int):
             
         # Пауза на 1 час (3600 секунд)
         await asyncio.sleep(3600)
+
+def get_and_increment_weather_count():
+    global weather_click_count
+    weather_click_count += 1
+    return weather_click_count

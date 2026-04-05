@@ -20,7 +20,7 @@ from supabase import create_client, Client
 from openai import AsyncOpenAI
 
 # Погода
-from weather import weather_background_task, build_weather_message
+from weather import weather_background_task, build_weather_message, get_and_increment_weather_count
 
 admin_id_raw = os.getenv("ADMIN_ID")
 ADMIN_ID = int(admin_id_raw) if admin_id_raw else None
@@ -98,7 +98,17 @@ async def cmd_start(message: types.Message, state: FSMContext):
     if message.text and "show_weather" in message.text:
         try:
             status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...")
+            
+            # 1. Получаем погоду
             weather_text = await build_weather_message()
+            
+            # 2. Увеличиваем счетчик
+            current_count = get_and_increment_weather_count()
+            
+            # 3. Если нажал АДМИН, дописываем статистику вниз текста
+            if ADMIN_ID and message.from_user.id == ADMIN_ID:
+                weather_text += f"\n\n📊 <b>Статистика админа:</b>\n<i>Бул баскычты бот иштегени <b>{current_count} жолу</b> басышты.</i>"
+
             await status_msg.edit_text(weather_text, parse_mode="HTML")
         except Exception as e:
             await message.answer(f"❌ Ошибка при загрузке погоды: {e}")
@@ -597,3 +607,5 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nБот выключен")
+
+
