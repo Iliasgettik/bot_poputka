@@ -462,8 +462,8 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 asyncio.create_task(delete_warning(warning_msg.chat.id, warning_msg.message_id))
                 return "LIMIT_REACHED"
             
-            # Сценарий Б: Попутчик үчүн лимит (15 жарыя)
-        elif not is_taxi_driver and posts_today >= 15:
+            # Сценарий Б: Попутчик үчүн лимит (10 жарыя)
+        elif not is_taxi_driver and posts_today >= 5:
                 poputchik_limit_text = (
                     f"🛑 <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>, <b>Сиздин бүгүнкү акысыз лимитиңиз бүттү (15/15).</b>\n\n"
                     f"Күндүк чектөө коюлду. Эгерде жарыяларды чектөөсүз киргизип, <b>{role_display} сүрөтүн</b> кошкуңуз келсе, <b>Тариф</b> кошуп алыңыз!\n\n"
@@ -509,7 +509,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                     text += f"\n\n<i>⚠️ Бүгүнкү акысыз жарыялар: {remaining} калды</i>"
                 else:
                     # Функция max(0, ...) не даст числу уйти в минус
-                    remaining_poputchik = max(0, 15 - (posts_today + 1))
+                    remaining_poputchik = max(0, 5 - (posts_today + 1))
                     text += f"\n\n<i>🆓 Попутчик режими: бүгүн {remaining_poputchik} калды</i>"
 
         # Отправка поста
