@@ -20,7 +20,7 @@ from supabase import create_client, Client
 from openai import AsyncOpenAI
 
 # Погода
-from weather import weather_background_task, build_weather_message, get_and_increment_weather_count
+from weather import weather_and_promo_task, build_weather_message, get_and_increment_weather_count
 
 admin_id_raw = os.getenv("ADMIN_ID")
 ADMIN_ID = int(admin_id_raw) if admin_id_raw else None
@@ -600,7 +600,7 @@ async def main():
     asyncio.ensure_future(weather_and_promo_task(bot, CHANNEL_ID))
 
     await dp.start_polling(bot)
-    
+
 if __name__ == '__main__':
     try:
         asyncio.run(main())
