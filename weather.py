@@ -116,12 +116,14 @@ async def weather_and_promo_task(bot: Bot, channel_id: int):
                         url=f"{os.getenv('BOT_START_LINK')}?start=buy_vip"
                     ))
 
-                    await bot.send_message(
+                    photo = types.FSInputFile("promo.png")
+                    await bot.send_photo(
                         chat_id=channel_id,
-                        text=promo_text,
+                        photo=photo,
+                        caption=promo_text,
                         parse_mode="HTML",
                         reply_markup=builder.as_markup()
-                    )
+)
                     logging.info("✅ Акция отправлена!")
 
         except Exception as e:
