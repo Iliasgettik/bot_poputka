@@ -130,4 +130,4 @@ async def weather_and_promo_task(bot: Bot, channel_id: int):
             logging.error(f"❌ Ошибка: {e}")
 
         send_weather = not send_weather  # Переключаем
-        await asyncio.sleep(60)  # 30 минут
+        await asyncio.sleep(1800)  # 30 минут
