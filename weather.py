@@ -3,6 +3,8 @@ import asyncio
 import aiohttp
 import logging
 from aiogram import Bot
+from aiogram import types
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 weather_click_count = 0
 
@@ -41,8 +43,7 @@ def get_weather_emoji(weather_main):
     return emojis.get(weather_main, "🌤")
 
 async def fetch_weather(session, location):
-    # Достаем ключ прямо перед запросом!
-    api_key = os.getenv("WEATHER_API_KEY") 
+    api_key = os.getenv("WEATHER_API_KEY")
     url = f"http://api.openweathermap.org/data/2.5/weather?{location['query']}&appid={api_key}&units=metric&lang=ru"
     async with session.get(url) as response:
         if response.status == 200:
@@ -57,14 +58,12 @@ async def build_weather_message():
             data = await fetch_weather(session, loc)
             
             if data:
-                # Перевод описания
                 raw_desc = data['weather'][0]['description'].lower().strip()
                 desc = WEATHER_TRANSLATIONS.get(raw_desc, raw_desc.capitalize())
                 
                 weather_main = data['weather'][0]['main']
                 emoji = get_weather_emoji(weather_main)
                 
-                # Оставляем только температуру и ветер
                 temp = round(data['main']['temp'])
                 wind = round(data['wind']['speed'])
                 
@@ -79,27 +78,54 @@ async def build_weather_message():
                 
     return message_text
 
-async def weather_background_task(bot: Bot, channel_id: int):
-    while True:
-        try:
-            logging.info(f"🔎 ПРОВЕРКА: Бот пытается отправить погоду в чат с ID: {channel_id}")
-            
-            # Достаем ключ здесь, чтобы проверить его наличие
-            api_key = os.getenv("WEATHER_API_KEY")
-            
-            if api_key and channel_id:
-                text = await build_weather_message()
-                await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML")
-                logging.info("✅ Погода успешно отправлена в канал!")
-            else:
-                logging.warning("❌ API ключ погоды или ID канала не найдены.")
-        except Exception as e:
-            logging.error(f"❌ Ошибка при отправке погоды: {e}")
-            
-        # Пауза на 1 час (3600 секунд)
-        await asyncio.sleep(3600)
-
 def get_and_increment_weather_count():
     global weather_click_count
     weather_click_count += 1
     return weather_click_count
+
+async def weather_and_promo_task(bot: Bot, channel_id: int):
+    send_weather = True  # Начинаем с погоды
+
+    while True:
+        try:
+            if send_weather:
+                api_key = os.getenv("WEATHER_API_KEY")
+                if api_key and channel_id:
+                    text = await build_weather_message()
+                    await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML")
+                    logging.info("✅ Погода отправлена!")
+                else:
+                    logging.warning("❌ API ключ погоды или ID канала не найдены.")
+            else:
+                if channel_id:
+                    promo_text = (
+                        "🚕 <b>АЙДООЧУ</b>\n\n"
+                        "🎁 <b><i>БЕКЕР акция!!!!</i></b>\n"
+                        "<i>Жарыяларыңыз чектөөсүз жана унааңыздын сүрөтү менен чыгат).</i>\n\n"
+                        "Кантип алса болот? Шарттары өтө жөнөкөй:\n\n"
+                        "1️⃣ Төмөнкү «💳 Тариф тандоо» баскычын басып, ботко кириңиз.\n"
+                        "2️⃣ Бот сизден төлөмдүн чегин (чек) сураганда — унааңыздын сүрөтүн эле жибере бериңиз 🚗\n"
+                        "3️⃣ Андан кийин бот \"Унааңыздын сүрөтүн жибериңиз\" деп кайра сураганда — "
+                        "кайра эле ошол унааңыздын сүрөтүн экинчи жолу жибериңиз 🚗\n"
+                        "4️⃣ Даяр! Админ текшерип, сизге даро 1 айга бекер VIP кошуп берет ✅"
+                    )
+
+                    builder = InlineKeyboardBuilder()
+                    builder.row(types.InlineKeyboardButton(
+                        text="💳 Тариф тандоо (Сүрөт кошуу)",
+                        url=f"{os.getenv('BOT_START_LINK')}?start=buy_vip"
+                    ))
+
+                    await bot.send_message(
+                        chat_id=channel_id,
+                        text=promo_text,
+                        parse_mode="HTML",
+                        reply_markup=builder.as_markup()
+                    )
+                    logging.info("✅ Акция отправлена!")
+
+        except Exception as e:
+            logging.error(f"❌ Ошибка: {e}")
+
+        send_weather = not send_weather  # Переключаем
+        await asyncio.sleep(1800)  # 30 минут

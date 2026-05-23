@@ -594,14 +594,13 @@ async def delete_all_other_messages(message: types.Message):
 # --- ЗАПУСК ---
 async def main():
     await bot.set_my_commands([types.BotCommand(command="start", description="🚀 Баштоо")])
-    asyncio.create_task(cleanup_old_messages())
-    asyncio.create_task(weather_background_task(bot, CHANNEL_ID))
-    
-    # +++ ДОБАВЛЯЕМ ЭТУ СТРОЧКУ +++
     await bot.delete_webhook(drop_pending_updates=True)
+    
+    asyncio.ensure_future(cleanup_old_messages())
+    asyncio.ensure_future(weather_and_promo_task(bot, CHANNEL_ID))
 
     await dp.start_polling(bot)
-
+    
 if __name__ == '__main__':
     try:
         asyncio.run(main())
