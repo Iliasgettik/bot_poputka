@@ -452,23 +452,23 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 
         if not is_vip and role in ["айдоочу", "жүк ташуу"]:
             # Считаем активность за последние 7 дней
-            seven_days_ago = (now - datetime.timedelta(days=7)).isoformat()
+            # seven_days_ago = (now - datetime.timedelta(days=7)).isoformat()
             
-            recent_posts_res = await asyncio.to_thread(
-                lambda: supabase.table(TAXI_TABLE).select("created_at")
-                .eq("user_id", user_id).gte("created_at", seven_days_ago).execute()
-            )
+            # recent_posts_res = await asyncio.to_thread(
+            #     lambda: supabase.table(TAXI_TABLE).select("created_at")
+            #     .eq("user_id", user_id).gte("created_at", seven_days_ago).execute()
+            # )
             
-            unique_days = set()
-            if recent_posts_res.data:
-                for post in recent_posts_res.data:
-                    # Извлекаем только дату YYYY-MM-DD из строки времени
-                    date_str = post["created_at"][:10]
-                    unique_days.add(date_str)
+            # unique_days = set()
+            # if recent_posts_res.data:
+            #     for post in recent_posts_res.data:
+            #         # Извлекаем только дату YYYY-MM-DD из строки времени
+            #         date_str = post["created_at"][:10]
+            #         unique_days.add(date_str)
             
             # Если публиковал поездки в 4 и более уникальных днях за неделю — он таксист
-            if len(unique_days) >= 4:
-                daily_limit = 3
+            ##if len(unique_days) >= 4:
+            ##    daily_limit = 3
 
             # Проверяем, не превышен ли вычисленный лимит
             if posts_today >= daily_limit:
