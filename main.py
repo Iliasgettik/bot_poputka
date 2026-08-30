@@ -155,7 +155,12 @@ def build_match_notification_text(row: dict) -> str:
         text += f"📞 <b>Тел.</b>: {phone}\n"
 
     if poster_user_id:
-        text += f"\n👤 <b>Байланышуу</b>: <a href='tg://user?id={poster_user_id}'>Telegram-дан жазуу</a>"
+        if poster_name:
+            # Если имя есть, делаем ссылку с именем
+            text += f"\n👤 <b>Байланышуу</b>: <a href='tg://user?id={poster_user_id}'>{poster_name}</a>"
+        else:
+            # Если имени нет (для старых записей), пишем стандартный текст
+            text += f"\n👤 <b>Байланышуу</b>: <a href='tg://user?id={poster_user_id}'>Telegram-дан жазуу</a>"
 
     return text
 
@@ -170,7 +175,7 @@ async def find_matches(want_role: str, destination: str, time_str: str, since_is
     try:
         res = await asyncio.to_thread(
             lambda: supabase.table(TAXI_TABLE)
-            .select("*")
+            .select("*, user_name")
             .eq("role", want_role)
             .not_.is_("message_id", "null")
             .gte("created_at", since_iso)
@@ -718,6 +723,10 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         # --- МЭТЧИНГ: сразу шлём подходящие объявления + подписка на час ---
         if role in OPPOSITE_ROLE:
             inserted_row = (insert_res.data or [db_payload])[0]
+
+        if not inserted_row.get("user_name"):
+                inserted_row["user_name"] = message.from_user.full_name
+                
             asyncio.create_task(
                 handle_matching(inserted_row, role, destination, time, user_id)
             )
