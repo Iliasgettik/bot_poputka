@@ -134,6 +134,7 @@ def build_match_notification_text(row: dict) -> str:
     car_model = row.get("car_model") or "Көрсөтүлгөн жок"
     passenger_count = row.get("passenger_count") or "Такталган жок"
     poster_user_id = row.get("user_id")
+    poster_name = row.get("user_name")
 
     text = (
         f"🔔 <b>Сизге ылайыктуу жарыя табылды!</b>\n\n"
@@ -703,7 +704,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
             )
   
         db_payload = {
-            "user_id": user_id, "role": role, "origin": origin, "destination": destination,
+            "user_id": user_id, "user_name": message.from_user.full_name, "role": role, "origin": origin, "destination": destination,
             "time": time, "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
             "phone_num": phone, "car_model": car_model, "price": price,
             "message_id": msg.message_id, "post_count": post_count,
