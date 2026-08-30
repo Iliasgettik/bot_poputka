@@ -121,7 +121,7 @@ def times_match(time_a: str, time_b: str, window_hours: int = MATCH_TIME_WINDOW_
 
 
 def build_match_notification_text(row: dict) -> str:
-    """Формирует текст карточки объявления для рассылки в личку."""
+    """Формирует текст карточки объявления для рассылки в личку — в том же стиле, что и оригинальный пост в канале."""
     role = row.get("role")
     icon = "🚕" if role == "айдоочу" else "👤"
     role_name = "АЙДООЧУ" if role == "айдоочу" else "ЖҮРГҮНЧҮ"
@@ -133,6 +133,7 @@ def build_match_notification_text(row: dict) -> str:
     price = row.get("price") or "Келишим баада"
     car_model = row.get("car_model") or "Көрсөтүлгөн жок"
     passenger_count = row.get("passenger_count") or "Такталган жок"
+    poster_user_id = row.get("user_id")
 
     text = (
         f"🔔 <b>Сизге ылайыктуу жарыя табылды!</b>\n\n"
@@ -145,11 +146,16 @@ def build_match_notification_text(row: dict) -> str:
         text += f"🚗 <b>Унаа</b>: {car_model}\n"
 
     label = "Орун" if role == "айдоочу" else "Адам"
-    text += (
-        f"👥 <b>{label}</b>: {passenger_count}\n"
-        f"💰 <b>Баасы</b>: {price}\n"
-        f"📞 <b>Тел.</b>: <a href='tel:{phone}'><code>{phone}</code></a>"
-    )
+    text += f"👥 <b>{label}</b>: {passenger_count}\n💰 <b>Баасы</b>: {price}\n"
+
+    if phone and phone != "Номери жок":
+        text += f"📞 <b>Тел.</b>: <a href='tel:{phone}'><code>{phone}</code></a>\n"
+    else:
+        text += f"📞 <b>Тел.</b>: {phone}\n"
+
+    if poster_user_id:
+        text += f"\n👤 <b>Байланышуу</b>: <a href='tg://user?id={poster_user_id}'>Telegram-дан жазуу</a>"
+
     return text
 
 
@@ -205,36 +211,51 @@ async def handle_matching(new_row: dict, role: str, destination: str, time_str: 
     if not want_role:
         return
     if not destination or destination.strip().lower() == UNKNOWN_DESTINATION:
-        return  # без известного направления безопасно матчить нельзя
+        logging.info(f"[MATCH] Пост id={new_row.get('id')} role={role}: направление не определено — мэтчинг пропущен")
+        return
 
     now = datetime.datetime.now(TZ_BISHKEK)
     lookback_since = (now - datetime.timedelta(hours=MATCH_SEARCH_LOOKBACK_HOURS)).isoformat()
     recent_cutoff = now - datetime.timedelta(hours=MATCH_SUBSCRIPTION_HOURS)
 
     candidates = await find_matches(want_role, destination, time_str, lookback_since, exclude_user_id=user_id)
+    logging.info(f"[MATCH] Новый пост id={new_row.get('id')} role={role} dest={destination!r} time={time_str!r} "
+                 f"user={user_id} -> найдено кандидатов ({want_role}): {len(candidates)}")
 
     # 1) Сразу шлём автору нового поста все уже существующие подходящие объявления
     for cand in candidates:
-        await send_match_notification(user_id, cand)
+        try:
+            await send_match_notification(user_id, cand)
+            logging.info(f"[MATCH] Step1: отправлено user={user_id} <- пост id={cand.get('id')}")
+        except Exception as e:
+            logging.error(f"[MATCH] Step1: ошибка отправки user={user_id} <- пост id={cand.get('id')}: {e}")
 
     # 2) Тем из кандидатов, кто сам написал своё объявление не позже часа назад,
     #    отправляем именно этот новый пост — это и есть "подписка на час":
     #    как только истечёт час с их публикации, они перестанут сюда попадать.
     already_notified = set()
     for cand in candidates:
-        cand_created_raw = cand.get("created_at")
         try:
-            cand_created_at = datetime.datetime.fromisoformat(cand_created_raw.replace('Z', '+00:00'))
-        except (TypeError, ValueError):
-            continue
-        if cand_created_at < recent_cutoff:
-            continue  # этот кандидат уже вне своего часового окна
+            cand_created_raw = cand.get("created_at")
+            if not cand_created_raw:
+                continue
+            cand_created_at = datetime.datetime.fromisoformat(str(cand_created_raw).replace('Z', '+00:00'))
+            if cand_created_at.tzinfo is None:
+                # На случай, если Supabase вернул время без таймзоны — считаем его бишкекским.
+                cand_created_at = cand_created_at.replace(tzinfo=TZ_BISHKEK)
 
-        cand_user_id = cand.get("user_id")
-        if cand_user_id in already_notified:
-            continue
-        already_notified.add(cand_user_id)
-        await send_match_notification(cand_user_id, new_row)
+            if cand_created_at < recent_cutoff:
+                continue  # этот кандидат уже вне своего часового окна
+
+            cand_user_id = cand.get("user_id")
+            if not cand_user_id or cand_user_id in already_notified:
+                continue
+            already_notified.add(cand_user_id)
+
+            await send_match_notification(cand_user_id, new_row)
+            logging.info(f"[MATCH] Step2: отправлено user={cand_user_id} <- новый пост id={new_row.get('id')}")
+        except Exception as e:
+            logging.error(f"[MATCH] Step2: ошибка обработки кандидата id={cand.get('id')}: {e}")
 
 
 # --- ФОНОВАЯ ЗАДАЧА: ОЧИСТКА СТАРЫХ ПОСТОВ (3 СУТОК) ---
