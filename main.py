@@ -726,8 +726,8 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 
         if not inserted_row.get("user_name"):
                 inserted_row["user_name"] = message.from_user.full_name
-                
-            asyncio.create_task(
+
+        asyncio.create_task(
                 handle_matching(inserted_row, role, destination, time, user_id)
             )
 
