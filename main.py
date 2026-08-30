@@ -137,6 +137,7 @@ def build_match_notification_text(row: dict) -> str:
     passenger_count = row.get("passenger_count") or "Такталган жок"
     poster_user_id = row.get("user_id")
     poster_name = row.get("user_name")
+    poster_username = row.get("tg_username")
 
     text = (
         f"🔔 <b>Сизге ылайыктуу жарыя табылды!</b>\n\n"
@@ -157,16 +158,15 @@ def build_match_notification_text(row: dict) -> str:
         text += f"📞 <b>Тел.</b>: {phone}\n"
 
     if poster_user_id:
-        # 1. Жестко очищаем ID (убираем пробелы, точки, делаем целым числом)
+        safe_name = html.escape(str(poster_name).strip()) if poster_name else "Telegram-дан жазуу"
         clean_user_id = int(float(str(poster_user_id).strip()))
         
-        if poster_name:
-            # 2. Безопасно обрабатываем имя (чтобы символы < > & не ломали ссылку)
-            safe_name = html.escape(str(poster_name).strip())
-            text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">{safe_name}</a>'
+        # Если у человека есть @username, даем 100% рабочую прямую ссылку
+        if poster_username:
+            text += f'\n👤 <b>Байланышуу</b>: <a href="https://t.me/{poster_username}">{safe_name}</a>'
+        # Если юзернейма нет, даем ссылку по ID (станет синей только если Телеграм разрешит)
         else:
-            text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">Telegram-дан жазуу</a>'
-    # <--- КОНЕЦ НОВОГО БЛОКА --->
+            text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">{safe_name}</a> <i>(Эгер басылбаса, номерге чалыңыз)</i>'
 
     return text
 
@@ -714,7 +714,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
             )
   
         db_payload = {
-            "user_id": user_id, "user_name": message.from_user.full_name, "role": role, "origin": origin, "destination": destination,
+            "user_id": user_id, "user_name": message.from_user.full_name, "tg_username": message.from_user.username, "role": role, "origin": origin, "destination": destination,
             "time": time, "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
             "phone_num": phone, "car_model": car_model, "price": price,
             "message_id": msg.message_id, "post_count": post_count,
@@ -728,11 +728,13 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         # --- МЭТЧИНГ: сразу шлём подходящие объявления + подписка на час ---
         if role in OPPOSITE_ROLE:
             inserted_row = (insert_res.data or [db_payload])[0]
-
-        if not inserted_row.get("user_name"):
+            
+            if not inserted_row.get("user_name"):
                 inserted_row["user_name"] = message.from_user.full_name
-
-        asyncio.create_task(
+            if not inserted_row.get("tg_username"):
+                inserted_row["tg_username"] = message.from_user.username
+                
+            asyncio.create_task(
                 handle_matching(inserted_row, role, destination, time, user_id)
             )
 
