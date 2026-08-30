@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import asyncio
 import datetime
@@ -55,6 +56,185 @@ class BuyVIP(StatesGroup):
 
 class AdminReject(StatesGroup):
     waiting_for_reason = State()
+
+
+# =====================================================================
+# --- МЭТЧИНГ: настройки, вспомогательные функции, рассылка в личку ---
+# =====================================================================
+
+# Какой роли соответствует "противоположная" роль для мэтчинга.
+# Расширяется только на явные пары водитель <-> пассажир (по ТЗ).
+OPPOSITE_ROLE = {
+    "айдоочу": "жүргүнчү",
+    "жүргүнчү": "айдоочу",
+}
+
+UNKNOWN_DESTINATION = "такталган жок"
+MATCH_TIME_WINDOW_HOURS = 3        # окно совпадения по времени выезда
+MATCH_SUBSCRIPTION_HOURS = 1       # сколько держится "подписка" на новые совпадения
+MATCH_SEARCH_LOOKBACK_HOURS = 24   # как далеко в прошлое искать уже существующие объявления
+
+
+def normalize_destination(text: str) -> str:
+    """Приводит текст направления к сравнимому виду (регистр, скобки, пробелы)."""
+    if not text:
+        return ""
+    t = text.lower()
+    t = re.sub(r"[().,!?\"']", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def destinations_match(dest_a: str, dest_b: str) -> bool:
+    """Совпадение по направлению 'куда едет'. Неизвестные направления не мэтчатся."""
+    if not dest_a or not dest_b:
+        return False
+    if dest_a.strip().lower() == UNKNOWN_DESTINATION or dest_b.strip().lower() == UNKNOWN_DESTINATION:
+        return False
+
+    na, nb = normalize_destination(dest_a), normalize_destination(dest_b)
+    if not na or not nb:
+        return False
+
+    return na == nb or na in nb or nb in na
+
+
+def time_to_minutes(time_str: str):
+    """Пытается вытащить HH:MM из свободного текста. Если не получилось — None (время 'гибкое')."""
+    if not time_str:
+        return None
+    match = re.search(r"([01]?\d|2[0-3])[:.\-]([0-5]\d)", time_str)
+    if not match:
+        return None
+    hour, minute = int(match.group(1)), int(match.group(2))
+    return hour * 60 + minute
+
+
+def times_match(time_a: str, time_b: str, window_hours: int = MATCH_TIME_WINDOW_HOURS) -> bool:
+    """Совпадение по времени в пределах окна. Если время не распарсилось — считаем 'гибким' (совпадает всегда)."""
+    minutes_a, minutes_b = time_to_minutes(time_a), time_to_minutes(time_b)
+    if minutes_a is None or minutes_b is None:
+        return True
+    diff = abs(minutes_a - minutes_b)
+    diff = min(diff, 1440 - diff)  # на случай перехода через полночь
+    return diff <= window_hours * 60
+
+
+def build_match_notification_text(row: dict) -> str:
+    """Формирует текст карточки объявления для рассылки в личку."""
+    role = row.get("role")
+    icon = "🚕" if role == "айдоочу" else "👤"
+    role_name = "АЙДООЧУ" if role == "айдоочу" else "ЖҮРГҮНЧҮ"
+
+    phone = row.get("phone_num") or "Номери жок"
+    origin = row.get("origin") or "Такталган жок"
+    destination = row.get("destination") or "Такталган жок"
+    time_str = row.get("time") or "Сүйлөшүү боюнча"
+    price = row.get("price") or "Келишим баада"
+    car_model = row.get("car_model") or "Көрсөтүлгөн жок"
+    passenger_count = row.get("passenger_count") or "Такталган жок"
+
+    text = (
+        f"🔔 <b>Сизге ылайыктуу жарыя табылды!</b>\n\n"
+        f"{icon} <b>{role_name}</b>\n\n"
+        f"📍 <b>Каяктан</b>: {origin}\n"
+        f"🏁 <b>Каякка</b>: {destination}\n"
+        f"🕒 <b>Убакыт</b>: {time_str}\n"
+    )
+    if role == "айдоочу":
+        text += f"🚗 <b>Унаа</b>: {car_model}\n"
+
+    label = "Орун" if role == "айдоочу" else "Адам"
+    text += (
+        f"👥 <b>{label}</b>: {passenger_count}\n"
+        f"💰 <b>Баасы</b>: {price}\n"
+        f"📞 <b>Тел.</b>: <a href='tel:{phone}'><code>{phone}</code></a>"
+    )
+    return text
+
+
+async def find_matches(want_role: str, destination: str, time_str: str, since_iso: str, exclude_user_id: int):
+    """
+    Ищет объявления роли want_role, опубликованные не раньше since_iso,
+    подходящие по направлению и времени. Используется и для 'найти уже
+    существующие мэтчи', и для 'кто ещё не позже часа назад писал похожее'
+    — разница только в since_iso.
+    """
+    try:
+        res = await asyncio.to_thread(
+            lambda: supabase.table(TAXI_TABLE)
+            .select("*")
+            .eq("role", want_role)
+            .not_.is_("message_id", "null")
+            .gte("created_at", since_iso)
+            .order("created_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+    except Exception as e:
+        logging.error(f"Ошибка поиска совпадений: {e}")
+        return []
+
+    matches = []
+    for row in res.data or []:
+        if row.get("user_id") == exclude_user_id:
+            continue
+        if not destinations_match(destination, row.get("destination")):
+            continue
+        if not times_match(time_str, row.get("time")):
+            continue
+        matches.append(row)
+    return matches
+
+
+async def send_match_notification(target_user_id: int, row: dict):
+    text = build_match_notification_text(row)
+    try:
+        await bot.send_message(chat_id=target_user_id, text=text, parse_mode="HTML")
+    except Exception as e:
+        logging.warning(f"Не удалось отправить мэтч юзеру {target_user_id}: {e}")
+
+
+async def handle_matching(new_row: dict, role: str, destination: str, time_str: str, user_id: int):
+    """
+    Главная точка входа: вызывается после публикации нового объявления айдоочу/жүргүнчү.
+    Никаких отдельных таблиц не нужно — 'подписка на час' это просто фильтр
+    по created_at существующей таблицы объявлений.
+    """
+    want_role = OPPOSITE_ROLE.get(role)
+    if not want_role:
+        return
+    if not destination or destination.strip().lower() == UNKNOWN_DESTINATION:
+        return  # без известного направления безопасно матчить нельзя
+
+    now = datetime.datetime.now(TZ_BISHKEK)
+    lookback_since = (now - datetime.timedelta(hours=MATCH_SEARCH_LOOKBACK_HOURS)).isoformat()
+    recent_cutoff = now - datetime.timedelta(hours=MATCH_SUBSCRIPTION_HOURS)
+
+    candidates = await find_matches(want_role, destination, time_str, lookback_since, exclude_user_id=user_id)
+
+    # 1) Сразу шлём автору нового поста все уже существующие подходящие объявления
+    for cand in candidates:
+        await send_match_notification(user_id, cand)
+
+    # 2) Тем из кандидатов, кто сам написал своё объявление не позже часа назад,
+    #    отправляем именно этот новый пост — это и есть "подписка на час":
+    #    как только истечёт час с их публикации, они перестанут сюда попадать.
+    already_notified = set()
+    for cand in candidates:
+        cand_created_raw = cand.get("created_at")
+        try:
+            cand_created_at = datetime.datetime.fromisoformat(cand_created_raw.replace('Z', '+00:00'))
+        except (TypeError, ValueError):
+            continue
+        if cand_created_at < recent_cutoff:
+            continue  # этот кандидат уже вне своего часового окна
+
+        cand_user_id = cand.get("user_id")
+        if cand_user_id in already_notified:
+            continue
+        already_notified.add(cand_user_id)
+        await send_match_notification(cand_user_id, new_row)
 
 
 # --- ФОНОВАЯ ЗАДАЧА: ОЧИСТКА СТАРЫХ ПОСТОВ (3 СУТОК) ---
@@ -509,10 +689,17 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
             "created_at": now.isoformat()
         }
         
-        await asyncio.to_thread(
+        insert_res = await asyncio.to_thread(
             lambda: supabase.table(TAXI_TABLE).insert(db_payload).execute()
         )
-        
+
+        # --- МЭТЧИНГ: сразу шлём подходящие объявления + подписка на час ---
+        if role in OPPOSITE_ROLE:
+            inserted_row = (insert_res.data or [db_payload])[0]
+            asyncio.create_task(
+                handle_matching(inserted_row, role, destination, time, user_id)
+            )
+
         return "SUCCESS"
 
     except Exception as e:
