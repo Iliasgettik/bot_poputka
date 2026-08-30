@@ -155,15 +155,14 @@ def build_match_notification_text(row: dict) -> str:
         text += f"📞 <b>Тел.</b>: {phone}\n"
 
     if poster_user_id:
+        clean_user_id = int(poster_user_id)  # Принудительно делаем чистым числом
+        
         if poster_name:
-            # Если имя есть, делаем ссылку с именем
-            text += f"\n👤 <b>Байланышуу</b>: <a href='tg://user?id={poster_user_id}'>{poster_name}</a>"
+            text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">{poster_name}</a>'
         else:
-            # Если имени нет (для старых записей), пишем стандартный текст
-            text += f"\n👤 <b>Байланышуу</b>: <a href='tg://user?id={poster_user_id}'>Telegram-дан жазуу</a>"
+            text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">Telegram-дан жазуу</a>'
 
     return text
-
 
 async def find_matches(want_role: str, destination: str, time_str: str, since_iso: str, exclude_user_id: int):
     """
