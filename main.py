@@ -4,7 +4,9 @@ import logging
 import asyncio
 import datetime
 import json
+import html
 from dotenv import load_dotenv
+
 
 # Aiogram импорты
 from aiogram.filters import Command, StateFilter
@@ -155,12 +157,16 @@ def build_match_notification_text(row: dict) -> str:
         text += f"📞 <b>Тел.</b>: {phone}\n"
 
     if poster_user_id:
-        clean_user_id = int(poster_user_id)  # Принудительно делаем чистым числом
+        # 1. Жестко очищаем ID (убираем пробелы, точки, делаем целым числом)
+        clean_user_id = int(float(str(poster_user_id).strip()))
         
         if poster_name:
-            text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">{poster_name}</a>'
+            # 2. Безопасно обрабатываем имя (чтобы символы < > & не ломали ссылку)
+            safe_name = html.escape(str(poster_name).strip())
+            text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">{safe_name}</a>'
         else:
             text += f'\n👤 <b>Байланышуу</b>: <a href="tg://user?id={clean_user_id}">Telegram-дан жазуу</a>'
+    # <--- КОНЕЦ НОВОГО БЛОКА --->
 
     return text
 
