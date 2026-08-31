@@ -337,7 +337,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await state.set_state(BuyVIP.waiting_for_car_photo)
         
     else:
-        await message.answer("👋 Саламатсызбы! Мен группадан жарыяларды автоматтык түрдө түзүүчү ботмун.")
+        await message.answer("👋 Регистрация болдуңуз. Эми кайрадан жарнаманызды группага жазызыныз (Бул жерге эмес) ")
 
 # --- ЗАЩИТА ОТ ДУРАКА: Ловим PDF, файлы, текст и стикеры ---
 @dp.message(~F.photo, StateFilter(BuyVIP.waiting_for_car_photo))
