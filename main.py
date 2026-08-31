@@ -303,6 +303,14 @@ def get_channel_publish_kb():
 # --- КОМАНДА /start ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
+    if message.chat.type == 'private':
+        try:
+            await asyncio.to_thread(
+                lambda: supabase.table("bot_users").upsert({"user_id": message.from_user.id}).execute()
+            )
+        except Exception as e:
+            logging.error(f"Ошибка сохранения юзера в bot_users: {e}")
+
     if message.text and "show_weather" in message.text:
         try:
             status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...")
@@ -751,6 +759,41 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 async def handle_new_ad(message: types.Message, state: FSMContext):
     if ADMIN_ID and message.from_user.id == ADMIN_ID:
         return
+
+    # 1. ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В БАЗЕ (НАЖИМАЛ ЛИ СТАРТ)
+    user_started = await asyncio.to_thread(
+        lambda: supabase.table("bot_users").select("user_id").eq("user_id", message.from_user.id).execute()
+    )
+
+    # Если его нет в базе bot_users
+    if not user_started.data:
+        try:
+            await message.delete() # Удаляем его объявление
+        except:
+            pass
+        
+        # Создаем кнопку для перехода в бота
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="🤖 Ботту ишке киргизүү", url=BOT_LINK))
+        
+        # Пишем предупреждение в группу
+        warning_text = (
+            f"⚠️ <a href='tg://user?id={message.from_user.id}'>{message.from_user.full_name}</a>, "
+            f"жарыя киргизүү үчүн алгач ботко кирип <b>СТАРТ</b> баскычын басышыңыз керек!\n\n"
+            f"<i>Бул сизге ылайыктуу жүргүнчү/айдоочу табылганда дароо личкаңызга смс барышы үчүн керек.</i>"
+        )
+        warning_msg = await message.answer(warning_text, parse_mode="HTML", reply_markup=builder.as_markup())
+        
+        # Удаляем это предупреждение через 60 секунд, чтобы не засорять группу
+        async def delete_warning(chat_id, msg_id):
+            await asyncio.sleep(60)
+            try:
+                await bot.delete_message(chat_id, msg_id)
+            except:
+                pass
+        asyncio.create_task(delete_warning(warning_msg.chat.id, warning_msg.message_id))
+        
+        return # ПРЕРЫВАЕМ ФУНКЦИЮ (сообщение в ChatGPT не отправляется)
         
     text_to_process = message.text or message.caption
     
