@@ -774,7 +774,7 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
         
         # Создаем кнопку для перехода в бота
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="🤖 Ботту ишке киргизүү", url=f"{BOT_LINK}?start=verify"))
+        builder.row(types.InlineKeyboardButton(text="🤖 СТАРТТЫ БАСЫҢЫЗ", url=f"{BOT_LINK}?start=verify"))
         
         # Пишем предупреждение в группу
         warning_text = (
