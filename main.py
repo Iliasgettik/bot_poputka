@@ -297,7 +297,7 @@ async def cleanup_old_messages():
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
-    builder.row(types.InlineKeyboardButton(text="👑 Сүрөт кошуу (1 Жылга Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
+    builder.row(types.InlineKeyboardButton(text="👑 Унаа сүрөт кошуу (Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
     return builder.as_markup()
 
 # --- КОМАНДА /start ---
@@ -327,10 +327,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
             
     elif message.text and "buy_vip" in message.text:
         text = (
-            "👑 <b>Сүрөтү менен жарыя киргизүү — 1 ЖЫЛГА БЕКЕР!</b>\n\n"
+            "👑 <b>Сүрөтү менен жарыя киргизүү — БЕКЕР!</b>\n\n"
             "Унааңыздын сүрөтүн кошуп, жарыяларыңызды чектөөсүз жана сүрөтүңүз менен жарыялаңыз!\n\n"
             "📸 <b>Унааңыздын реалдуу сүрөтүн жөнөтүңүз</b> — админ текшерип, "
-            "сизге 1 жылга бекер активациялап берет.\n\n"
+            "сизге бекер активациялап берет.\n\n"
             "👇 Азыр эле унааңыздын сүрөтүн жибериңиз:"
         )
         await message.answer(text, parse_mode="HTML")
@@ -425,7 +425,7 @@ async def admin_approve_vip(callback: types.CallbackQuery):
             chat_id=user_id, 
             text=(
                 f"🎉 <b>Куттуктайбыз!</b> Сиздин өтүнүчүңүз тастыкталды.\n\n"
-                f"👑 Сизге <b>1 жылга бекер VIP</b> берилди! "
+                f"👑 Сизге <b>бекер VIP</b> берилди! "
                 f"(<b>{expires_at_iso[:10]}</b> күнүнө чейин)\n\n"
                 f"Эми жарыяларыңыз чектөөсүз жана унааңыздын сүрөтү менен чыгат! 🚗"
             ), 
