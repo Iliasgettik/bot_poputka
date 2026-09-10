@@ -337,7 +337,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await state.set_state(BuyVIP.waiting_for_car_photo)
         
     else:
-        await message.answer("👋 Регистрация болдуңуз. Эми кайрадан жарнаманызды группага жазызыныз (Бул жерге эмес) ")
+        await message.answer("👋 Регистрация болдуңуз. Эми кайрадан жарнамаңызды группага жазыңыз (Бул жерге эмес) ")
 
 # --- ЗАЩИТА ОТ ДУРАКА: Ловим PDF, файлы, текст и стикеры ---
 @dp.message(~F.photo, StateFilter(BuyVIP.waiting_for_car_photo))
@@ -672,7 +672,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 
                 limit_builder = InlineKeyboardBuilder()
                 limit_builder.row(types.InlineKeyboardButton(
-                    text="👑 Сүрөт кошуу (1 Жылга Бекер!)",
+                    text="👑 Унаа сүрөт кошуу (Бекер!)",
                     url=f"{BOT_LINK}?start=buy_vip"
                 ))
                 
