@@ -666,13 +666,13 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                     f"<b>Сиздин бүгүнкү акысыз лимитиңиз бүттү ({daily_limit}/{daily_limit}).</b>\n\n"
                     f"Жарыяңыз киргизилген жок. Чектөөсүз жарыя жазуу жана "
                     f"<b>{role_display} сүрөтүн</b> кошуу үчүн — "
-                    f"унааңыздын сүрөтүн жөнөтсөңүз болот, <b>1 жылга бекер!</b>\n\n"
+                    f"унааңыздын сүрөтүн жөнөтсөңүз болот, <b>Бекер!</b>\n\n"
                     "👇 Төмөнкү баскычты басыңыз:"
                 )
                 
                 limit_builder = InlineKeyboardBuilder()
                 limit_builder.row(types.InlineKeyboardButton(
-                    text="👑 Унаа сүрөт кошуу (Бекер!)",
+                    text="🚗 Унаа сүрөт кошуу (Бекер!)",
                     url=f"{BOT_LINK}?start=buy_vip"
                 ))
                 
