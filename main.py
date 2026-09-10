@@ -297,7 +297,7 @@ async def cleanup_old_messages():
 def get_channel_publish_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
-    builder.row(types.InlineKeyboardButton(text="👑 Унаа сүрөт кошуу (Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
+    builder.row(types.InlineKeyboardButton(text="🚗 Унаа сүрөт кошуу (Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
     return builder.as_markup()
 
 # --- КОМАНДА /start ---
@@ -675,6 +675,8 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                     text="🚗 Унаа сүрөт кошуу (Бекер!)",
                     url=f"{BOT_LINK}?start=buy_vip"
                 ))
+
+
                 
                 warning_msg = await bot.send_message(
                     chat_id=message.chat.id, text=limit_text,
