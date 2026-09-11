@@ -52,6 +52,18 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 aclient = AsyncOpenAI(api_key=OPENAI_KEY)
 
 
+async def db_retry(func, retries=3, delay=1.0):
+    """Повторяет запрос к БД при обрыве HTTP/2 соединения."""
+    for attempt in range(retries):
+        try:
+            return await asyncio.to_thread(func)
+        except Exception as e:
+            if attempt == retries - 1:
+                raise e
+            logging.warning(f"Сбой соединения (попытка {attempt + 1}/{retries}). Ждем {delay}с... Ошибка: {e}")
+            await asyncio.sleep(delay)
+
+
 # --- КЛАССЫ СОСТОЯНИЙ ---
 class BuyVIP(StatesGroup):
     waiting_for_car_photo = State()  # Теперь только фото машины, без чека
@@ -275,7 +287,7 @@ async def cleanup_old_messages():
         try:
             three_days_ago = (datetime.datetime.now(TZ_BISHKEK) - datetime.timedelta(days=3)).isoformat()
             
-            res = await asyncio.to_thread(
+            res = await db_retry(
                 lambda: supabase.table(TAXI_TABLE).select("id", "message_id").lt("created_at", three_days_ago).not_.is_("message_id", "null").execute()
             )
             
@@ -285,9 +297,10 @@ async def cleanup_old_messages():
                 except:
                     pass
                 
-                await asyncio.to_thread(
+                await db_retry(
                     lambda r=record: supabase.table(TAXI_TABLE).update({"message_id": None}).eq("id", r["id"]).execute()
                 )
+                
         except Exception as e:
             logging.error(f"Ошибка очистки: {e}")
         finally:
@@ -632,18 +645,16 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 
         now = datetime.datetime.now(TZ_BISHKEK)
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-
-        daily_count_res = await asyncio.to_thread(
+        daily_count_res = await db_retry(
             lambda: supabase.table(TAXI_TABLE).select("id", count="exact")
             .eq("user_id", user_id).eq("role", role).gte("created_at", start_of_day).execute()
         )
         posts_today = daily_count_res.count or 0
-
         # Проверяем VIP статус
         is_vip = False
         photo_file_id = None
         
-        vip_res = await asyncio.to_thread(
+        vip_res = await db_retry(
             lambda: supabase.table("premium_drivers").select("photo_file_id, expires_at").eq("user_id", user_id).execute()
         )
         
@@ -693,7 +704,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 
                 return "LIMIT_REACHED"
 
-        count_res = await asyncio.to_thread(
+        count_res = await db_retry(
             lambda: supabase.table(TAXI_TABLE).select("id", count="exact").eq("user_id", user_id).eq("role", role).execute()
         )
         post_count = (count_res.count or 0) + 1
@@ -731,7 +742,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
             "created_at": now.isoformat()
         }
         
-        insert_res = await asyncio.to_thread(
+        insert_res = await db_retry(
             lambda: supabase.table(TAXI_TABLE).insert(db_payload).execute()
         )
 
@@ -764,7 +775,7 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
 
     # 1. ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В БАЗЕ (НАЖИМАЛ ЛИ СТАРТ)
     try:
-        user_started = await asyncio.to_thread(
+        user_started = await db_retry(
             lambda: supabase.table("bot_users").select("user_id").eq("user_id", message.from_user.id).execute()
         )
     except Exception as e:
