@@ -763,9 +763,13 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
         return
 
     # 1. ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В БАЗЕ (НАЖИМАЛ ЛИ СТАРТ)
-    user_started = await asyncio.to_thread(
-        lambda: supabase.table("bot_users").select("user_id").eq("user_id", message.from_user.id).execute()
-    )
+    try:
+        user_started = await asyncio.to_thread(
+            lambda: supabase.table("bot_users").select("user_id").eq("user_id", message.from_user.id).execute()
+        )
+    except Exception as e:
+        logging.error(f"Ошибка соединения с БД при проверке юзера {message.from_user.id}: {e}")
+        return  # Прерываем выполнение, чтобы бот не завис и не выдал ошибку
 
     # Если его нет в базе bot_users
     if not user_started.data:
