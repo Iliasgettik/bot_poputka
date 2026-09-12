@@ -314,6 +314,12 @@ async def cleanup_old_messages():
 #     builder.row(types.InlineKeyboardButton(text="🚗 Унаа сүрөт кошуу (Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
 #     return builder.as_markup()
 
+def get_channel_publish_kb():
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🚗 Унаа сүрөт кошуу (Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
+    return builder.as_markup()
+
+
 # --- КОМАНДА /start ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -798,12 +804,26 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
         builder.row(types.InlineKeyboardButton(text="🤖 СТАРТТЫ БАСЫҢЫЗ", url=f"{BOT_LINK}?start=verify"))
         
         # Пишем предупреждение в группу
+        # warning_text = (
+        #     f"⚠️ <a href='tg://user?id={message.from_user.id}'>{message.from_user.full_name}</a>, "
+        #     f"жарыя киргизүү үчүн алгач ботко кирип <b>СТАРТ</b> баскычын басышыңыз керек!\n\n"
+        #     f"<i>Бул сизге ылайыктуу жүргүнчү/айдоочу табылганда дароо личкаңызга смс барышы үчүн керек.</i>"
+        # )
+        # warning_msg = await message.answer(warning_text, parse_mode="HTML", reply_markup=builder.as_markup())
+
+        # Пишем предупреждение в группу
         warning_text = (
-            f"⚠️ <a href='tg://user?id={message.from_user.id}'>{message.from_user.full_name}</a>, "
-            f"жарыя киргизүү үчүн алгач ботко кирип <b>СТАРТ</b> баскычын басышыңыз керек!\n\n"
-            f"<i>Бул сизге ылайыктуу жүргүнчү/айдоочу табылганда дароо личкаңызга смс барышы үчүн керек.</i>"
+            f"👋 <a href='tg://user?id={message.from_user.id}'>{message.from_user.full_name}</a>, саламатсызбы!\n\n"
+            f"Жарыяңыз азырынча көрүнбөй турат — бир гана кичине кадам калды 🙂\n\n"
+            f"Ботко кирип <b>СТАРТ</b> баскычын басыңыз, андан кийин жарыяңызды кайра жазсаңыз болот.\n\n"
+            f"🎁 <i>Пайдасы: ошондо сизге дал келген жүргүнчү же айдоочу табылганда, "
+            f"дароо жеке кабарыңызга билдирүү келет!</i>\n\n"
+            f"⬇️ Төмөндөгү баскычты басыңыз ⬇️"
         )
         warning_msg = await message.answer(warning_text, parse_mode="HTML", reply_markup=builder.as_markup())
+
+
+
         
         # Удаляем это предупреждение через 60 секунд, чтобы не засорять группу
         async def delete_warning(chat_id, msg_id):
