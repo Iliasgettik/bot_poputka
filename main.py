@@ -41,6 +41,19 @@ CHANNEL_ID = int(raw_id) if raw_id else None
 TAXI_TABLE = os.getenv("TABLE_NAME")
 BOT_LINK = os.getenv("BOT_START_LINK")
 
+
+
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+logging.info(f"[DEBUG] SUPABASE_URL = {SUPABASE_URL}")
+logging.info(f"[DEBUG] SUPABASE_KEY (первые 20 симв.) = {SUPABASE_KEY[:20] if SUPABASE_KEY else None}")
+
+
+
+
+
 # Настройка времени Бишкека
 TZ_BISHKEK = datetime.timezone(datetime.timedelta(hours=6))
 
