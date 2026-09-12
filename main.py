@@ -23,7 +23,8 @@ from supabase import create_client, Client
 from openai import AsyncOpenAI
 
 # Погода
-from weather import weather_and_promo_task, build_weather_message, get_and_increment_weather_count
+#from weather import weather_and_promo_task, build_weather_message, get_and_increment_weather_count
+from weather import weather_and_promo_task
 
 admin_id_raw = os.getenv("ADMIN_ID")
 ADMIN_ID = int(admin_id_raw) if admin_id_raw else None
@@ -307,11 +308,11 @@ async def cleanup_old_messages():
             await asyncio.sleep(3600)
 
 # --- КНОПКА ПОД ПОСТОМ ---
-def get_channel_publish_kb():
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
-    builder.row(types.InlineKeyboardButton(text="🚗 Унаа сүрөт кошуу (Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
-    return builder.as_markup()
+# def get_channel_publish_kb():
+#     builder = InlineKeyboardBuilder()
+#     builder.row(types.InlineKeyboardButton(text="🌤 Погода / Аба ырайы", url=f"{BOT_LINK}?start=show_weather"))
+#     builder.row(types.InlineKeyboardButton(text="🚗 Унаа сүрөт кошуу (Бекер!)", url=f"{BOT_LINK}?start=buy_vip"))
+#     return builder.as_markup()
 
 # --- КОМАНДА /start ---
 @dp.message(Command("start"))
@@ -324,23 +325,26 @@ async def cmd_start(message: types.Message, state: FSMContext):
         except Exception as e:
             logging.error(f"Ошибка сохранения юзера в bot_users: {e}")
 
-    if message.text and "show_weather" in message.text:
-        try:
-            status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...")
-            
-            weather_text = await build_weather_message()
-            current_count = get_and_increment_weather_count()
-            
-            if ADMIN_ID and message.from_user.id == ADMIN_ID:
-                weather_text += f"\n\n📊 <b>Статистика админа:</b>\n<i>Бул баскычты бот иштегени <b>{current_count} жолу</b> басышты.</i>"
+    
 
-            await status_msg.edit_text(weather_text, parse_mode="HTML")
-        except Exception as e:
-            await message.answer(f"❌ Ошибка при загрузке погоды: {e}")
+    # if message.text and "show_weather" in message.text:
+    #     try:
+    #         status_msg = await message.answer("⏳ Аба ырайы тууралуу маалымат алынууда...")
             
-    elif message.text and "buy_vip" in message.text:
+    #         weather_text = await build_weather_message()
+    #         current_count = get_and_increment_weather_count()
+            
+    #         if ADMIN_ID and message.from_user.id == ADMIN_ID:
+    #             weather_text += f"\n\n📊 <b>Статистика админа:</b>\n<i>Бул баскычты бот иштегени <b>{current_count} жолу</b> басышты.</i>"
+
+    #         await status_msg.edit_text(weather_text, parse_mode="HTML")
+    #     except Exception as e:
+    #         await message.answer(f"❌ Ошибка при загрузке погоды: {e}")
+            
+    # elif message.text and "buy_vip" in message.text:
+    if message.text and "buy_vip" in message.text:
         text = (
-            "👑 <b>Сүрөтү менен жарыя киргизүү — БЕКЕР!</b>\n\n"
+            "🚗 <b>Сүрөтү менен жарыя киргизүү — БЕКЕР!</b>\n\n"
             "Унааңыздын сүрөтүн кошуп, жарыяларыңызды чектөөсүз жана сүрөтүңүз менен жарыялаңыз!\n\n"
             "📸 <b>Унааңыздын реалдуу сүрөтүн жөнөтүңүз</b> — админ текшерип, "
             "сизге бекер активациялап берет.\n\n"
@@ -714,7 +718,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 text += "\n\n<i>👑 Сизде VIP-статус (чектөөсүз)</i>"
             else:
                 remaining = daily_limit - (posts_today + 1)
-                text += f"\n\n<i>⚠️ Бүгүнкү акысыз жарыялар: {remaining}/{daily_limit} калды</i>"
+                text += f"\n\n<i>⚠️ Бүгүнкү жарыя лимити: {remaining}/{daily_limit} калды</i>"
 
         # Публикуем пост
         if is_vip and role == "айдоочу" and photo_file_id:

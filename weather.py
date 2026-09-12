@@ -88,15 +88,15 @@ async def weather_and_promo_task(bot: Bot, channel_id: int):
 
     while True:
         try:
-            if send_weather:
-                api_key = os.getenv("WEATHER_API_KEY")
-                if api_key and channel_id:
-                    text = await build_weather_message()
-                    await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML")
-                    logging.info("✅ Погода отправлена!")
-                else:
-                    logging.warning("❌ API ключ погоды или ID канала не найдены.")
-            else:
+            # if send_weather:
+            #     api_key = os.getenv("WEATHER_API_KEY")
+            #     if api_key and channel_id:
+            #         text = await build_weather_message()
+            #         await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML")
+            #         logging.info("✅ Погода отправлена!")
+            #     else:
+            #         logging.warning("❌ API ключ погоды или ID канала не найдены.")
+            # else:
                 if channel_id:
                     promo_text = (
                         "🚕 <b>АЙДООЧУ</b>\n\n"
@@ -127,5 +127,5 @@ async def weather_and_promo_task(bot: Bot, channel_id: int):
         except Exception as e:
             logging.error(f"❌ Ошибка: {e}")
 
-        send_weather = not send_weather  # Переключаем
+        #send_weather = not send_weather  # Переключаем
         await asyncio.sleep(1800)  # 30 минут
