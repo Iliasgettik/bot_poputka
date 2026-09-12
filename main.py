@@ -252,7 +252,7 @@ async def handle_matching(new_row: dict, role: str, destination: str, time_str: 
         return
 
     now = datetime.datetime.now(TZ_BISHKEK)
-    lookback_since = (now - datetime.timedelta(hours=MATCH_SEARCH_LOOKBACK_HOURS)).isoformat()
+    lookback_since = (now - datetime.timedelta(hours=MATCH_SUBSCRIPTION_HOURS)).isoformat()
     recent_cutoff = now - datetime.timedelta(hours=MATCH_SUBSCRIPTION_HOURS)
 
     candidates = await find_matches(want_role, destination, time_str, lookback_since, exclude_user_id=user_id)
