@@ -756,15 +756,10 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                     parse_mode="HTML", reply_markup=get_channel_publish_kb()
                 )
         else:
-            banner = types.FSInputFile("banner_vip_green.png")
-            msg = await bot.send_photo(
-                chat_id=message.chat.id, photo=banner,
-                caption=text, parse_mode="HTML", reply_markup=get_channel_publish_kb()
+            msg = await bot.send_message(
+                chat_id=message.chat.id, text=text,
+                parse_mode="HTML", reply_markup=get_channel_publish_kb()
             )
-            # msg = await bot.send_message(
-            #     chat_id=message.chat.id, text=text,
-            #     parse_mode="HTML", reply_markup=get_channel_publish_kb()
-            # )
   
         db_payload = {
             "user_id": user_id, "user_name": message.from_user.full_name, "tg_username": message.from_user.username, "role": role, "origin": origin, "destination": destination,
