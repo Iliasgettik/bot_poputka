@@ -743,24 +743,27 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 remaining = daily_limit - (posts_today + 1)
                 text += f"\n\n<i>⚠️ Бүгүнкү жарыя лимити: {remaining}/{daily_limit} калды</i>"
 
+        # Кнопка "Унаа сүрөт кошуу" нужна только водителям — у пассажира нет машины
+        publish_kb = get_channel_publish_kb() if role == "айдоочу" else None
+
         # Публикуем пост
         if is_vip and role == "айдоочу" and photo_file_id:
             try:
                 msg = await bot.send_photo(
                     chat_id=message.chat.id, photo=photo_file_id,
-                    caption=text, parse_mode="HTML", reply_markup=get_channel_publish_kb()
+                    caption=text, parse_mode="HTML", reply_markup=publish_kb
                 )
             except:
                 msg = await bot.send_message(
                     chat_id=message.chat.id, text=text,
-                    parse_mode="HTML", reply_markup=get_channel_publish_kb()
+                    parse_mode="HTML", reply_markup=publish_kb
                 )
         else:
             msg = await bot.send_message(
                 chat_id=message.chat.id, text=text,
-                parse_mode="HTML", reply_markup=get_channel_publish_kb()
+                parse_mode="HTML", reply_markup=publish_kb
             )
-  ####testcomint
+        
         db_payload = {
             "user_id": user_id, "user_name": message.from_user.full_name, "tg_username": message.from_user.username, "role": role, "origin": origin, "destination": destination,
             "time": time, "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
