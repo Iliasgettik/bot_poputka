@@ -756,7 +756,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 chat_id=message.chat.id, text=text,
                 parse_mode="HTML", reply_markup=get_channel_publish_kb()
             )
-  
+  ####testcomint
         db_payload = {
             "user_id": user_id, "user_name": message.from_user.full_name, "tg_username": message.from_user.username, "role": role, "origin": origin, "destination": destination,
             "time": time, "passenger_count": str(passenger_count) if role != "жүк ташуу" else cargo_type,
