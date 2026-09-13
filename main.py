@@ -711,11 +711,15 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 ))
 
 
-                
-                warning_msg = await bot.send_message(
-                    chat_id=message.chat.id, text=limit_text,
-                    parse_mode="HTML", reply_markup=limit_builder.as_markup()
+                banner = types.FSInputFile("banner_warning_red.png")
+                warning_msg = await bot.send_photo(
+                    chat_id=message.chat.id, photo=banner,
+                    caption=limit_text, parse_mode="HTML", reply_markup=limit_builder.as_markup()
                 )
+                # warning_msg = await bot.send_message(
+                #     chat_id=message.chat.id, text=limit_text,
+                #     parse_mode="HTML", reply_markup=limit_builder.as_markup()
+                # )
                 
                 async def delete_warning(chat_id, msg_id):
                     await asyncio.sleep(120)
@@ -752,10 +756,15 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                     parse_mode="HTML", reply_markup=get_channel_publish_kb()
                 )
         else:
-            msg = await bot.send_message(
-                chat_id=message.chat.id, text=text,
-                parse_mode="HTML", reply_markup=get_channel_publish_kb()
+            banner = types.FSInputFile("banner_vip_green.png")
+            msg = await bot.send_photo(
+                chat_id=message.chat.id, photo=banner,
+                caption=text, parse_mode="HTML", reply_markup=get_channel_publish_kb()
             )
+            # msg = await bot.send_message(
+            #     chat_id=message.chat.id, text=text,
+            #     parse_mode="HTML", reply_markup=get_channel_publish_kb()
+            # )
   
         db_payload = {
             "user_id": user_id, "user_name": message.from_user.full_name, "tg_username": message.from_user.username, "role": role, "origin": origin, "destination": destination,
