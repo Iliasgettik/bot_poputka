@@ -555,7 +555,8 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
         return
 
     # 3. Отправляем в GPT, если все проверки пройдены
-    status = await process_and_publish_ad(text_to_process, message)
+    
+    status = await process_and_publish_ad(text_to_process.lower(), message)
     if status == "SPAM":
         try:
             await message.delete()
