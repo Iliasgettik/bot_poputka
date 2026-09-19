@@ -543,9 +543,9 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
             parse_mode="HTML"
         )
         
-        # Удаляем предупреждение через 60 секунд
+        # Удаляем предупреждение через 15 секунд
         async def _del_warn(chat_id, msg_id):
-            await asyncio.sleep(30)
+            await asyncio.sleep(15)
             try:
                 await bot.delete_message(chat_id, msg_id)
             except:
