@@ -10,6 +10,7 @@ from aiogram.filters import Command, StateFilter
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from ad_parser import parse_ad, build_clarification_text
 
 # Импорты для Машины Состояний (FSM)
 from aiogram.fsm.state import State, StatesGroup
@@ -117,7 +118,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer(text, parse_mode="HTML")
         await state.set_state(BuyVIP.waiting_for_car_photo)
     else:
-        await message.answer("👋 Саламатсызбы! Жарнамаңызды группага жазыңыз (бул жерге эмес).")
+        await message.answer("👋 Саламатсызбы! Жарнамаңызды группага жазыңыз")
 
 
 # --- ЗАЩИТА ОТ ДУРАКА: Ловим PDF, файлы, текст и стикеры ---
@@ -315,64 +316,38 @@ async def cmd_id(message: types.Message):
 async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
     user_id = message.from_user.id
 
-    prompt = f"""
-    Проанализируй текст объявления из кыргызской/русской группы такси: "{text_to_analyze}"
-
-    Задача: Разобрать текст и строго вернуть JSON.
-
-    ПРАВИЛА ОПРЕДЕЛЕНИЯ РОЛИ:
-    1. "жүргүнчү" (Пассажир - у него НЕТ машины, он хочет уехать):
-    - Фразы: "бир адам кетет", "1 адам кетет", "барат", "кетем", "нужна машина".
-    - Важно: Если человек пишет маршрут и просто "кетет" без указания машины — он пассажир!
-
-    2. "айдоочу" (Водитель - у него ЕСТЬ машина):
-    - Фразы: "киши керек", "адам керек", "орун бар", "салон бош", "Кто: Водитель".
-    - Наличие ЛЮБОЙ марки авто (K5, Камри, BYD, Grandeur, Малибу, Степ и т.д.) = ВОДИТЕЛЬ.
-
-    3. "посылка" (Передача мелких вещей, документов, сумок):
-    - Фразы: "передача бар", "посылка", "документ", "передать", "сумка берем".
-
-    4. "жүк ташуу" (Грузоперевозки - тяжелый груз, мебель, переезды):
-    - Клиент (ищет грузовик): "жүк бар", "портер керек", "газель керек", "көчүш керек".
-    - Водитель грузовика (ищет груз): "портер бар", "жүк алам", "бош портер", "газель".
-
-    Верни JSON:
-    {{
-      "is_ad": boolean,
-      "role": string or null,
-      "origin": string or null,
-      "destination": string or null,
-      "time": string or null,
-      "price": string or null,
-      "passenger_count": string or null,
-      "cargo_type": string or null,
-      "phone_number": string or null,
-      "car_model": string or null
-    }}
-    """
-
     try:
-        response = await aclient.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
-        )
-
-        parsed_data = json.loads(response.choices[0].message.content)
+        parsed_data = await parse_ad(aclient, text_to_analyze)
 
         if not parsed_data.get("is_ad"):
             return "SPAM"
 
-        role = parsed_data.get("role")
+        # Роль или маршрут неясны: не публикуем, просим уточнить
+        if parsed_data["clarification_needed"]:
+            try:
+                await bot.delete_message(message.chat.id, message.message_id)
+            except Exception:
+                pass
 
-        text_lower = text_to_analyze.lower()
-        if role == "айдоочу" and any(word in text_lower for word in ["адам кетет", "барам", "кетем", "адам барат"]):
-            if not parsed_data.get("car_model"):
-                role = "жүргүнчү"
+            warn = await bot.send_message(
+                chat_id=message.chat.id,
+                text=build_clarification_text(
+                    message.from_user.full_name, user_id,
+                    text_to_analyze, parsed_data["missing"]
+                ),
+                parse_mode="HTML"
+            )
 
-        if not role:
-            return "SPAM"
+            async def _del_warn(chat_id, msg_id):
+                await asyncio.sleep(90)
+                try:
+                    await bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+            asyncio.create_task(_del_warn(warn.chat.id, warn.message_id))
+            return "UNCLEAR"
+
+        role = parsed_data["role"]
 
         phone = parsed_data.get("phone_number") or "Номери жок"
         car_model = parsed_data.get("car_model") or "Көрсөтүлгөн жок"
