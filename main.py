@@ -461,10 +461,9 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                     url=f"{BOT_LINK}?start=buy_vip"
                 ))
 
-                banner = types.FSInputFile("banner_warning_red.png")
-                warning_msg = await bot.send_photo(
-                    chat_id=message.chat.id, photo=banner,
-                    caption=limit_text, parse_mode="HTML", reply_markup=limit_builder.as_markup()
+                warning_msg = await bot.send_message(
+                    chat_id=message.chat.id, text=limit_text,
+                    parse_mode="HTML", reply_markup=limit_builder.as_markup()
                 )
 
                 async def delete_warning(chat_id, msg_id):
@@ -493,7 +492,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         publish_kb = get_channel_publish_kb() if role in DRIVER_ROLES else None
 
         # Публикуем пост
-        if is_vip and role == DRIVER_ROLES and photo_file_id:
+        if is_vip and role in DRIVER_ROLES and photo_file_id:
             try:
                 msg = await bot.send_photo(
                     chat_id=message.chat.id, photo=photo_file_id,
