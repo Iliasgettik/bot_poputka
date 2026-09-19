@@ -511,23 +511,52 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 async def handle_new_ad(message: types.Message, state: FSMContext):
     if ADMIN_ID and message.from_user.id == ADMIN_ID:
         return
-
     text_to_process = message.text or message.caption
-
     if not text_to_process:
         return
-
     text_lower = text_to_process.lower()
-
-    if "http" in text_lower or "t.me" in text_lower or "www." in text_lower or len(text_to_process.split()) < 3:
+    
+    # 1. Проверка на спам/ссылки (удаляем молча)
+    if "http" in text_lower or "t.me" in text_lower or "www." in text_lower:
         try:
             await message.delete()
         except:
             pass
         return
+        
+    # 2. Проверка на короткие сообщения (1 или 2 слова)
+    words = text_to_process.split()
+    if len(words) <= 2:
+        try:
+            await message.delete()
+        except:
+            pass
+            
+        warn_msg = await bot.send_message(
+            chat_id=message.chat.id,
+            text=(
+                f"⚠️ <a href='tg://user?id={message.from_user.id}'>{message.from_user.first_name}</a>, "
+                f"сиздин билдирүүңүз өтө кыска (контекст түшүнүксүз). "
+                f"Сураныч, толугураак жазыңыз (мисалы: каяктан, каякка, унаа/жүк).\n\n"
+                f"📝 <b>Сиздин текст:</b>\n<code>{text_to_process}</code>"
+            ),
+            parse_mode="HTML"
+        )
+        
+        # Удаляем предупреждение через 15 секунд
+        async def _del_warn(chat_id, msg_id):
+            await asyncio.sleep(15)
+            try:
+                await bot.delete_message(chat_id, msg_id)
+            except:
+                pass
+        
+        asyncio.create_task(_del_warn(warn_msg.chat.id, warn_msg.message_id))
+        return
 
-    status = await process_and_publish_ad(text_to_process, message)
-
+    # 3. Отправляем в GPT, если все проверки пройдены
+    
+    status = await process_and_publish_ad(text_to_process.lower(), message)
     if status == "SPAM":
         try:
             await message.delete()
@@ -535,7 +564,6 @@ async def handle_new_ad(message: types.Message, state: FSMContext):
             pass
     elif status == "ERROR":
         logging.error("Объявление не обработано из-за ошибки GPT/БД")
-
 
 # --- УДАЛЕНИЕ МУСОРА (Стикеры, фото без текста, видео и т.д.) ---
 @dp.message()
