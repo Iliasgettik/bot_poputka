@@ -118,7 +118,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer(text, parse_mode="HTML")
         await state.set_state(BuyVIP.waiting_for_car_photo)
     else:
-        await message.answer("👋 Саламатсызбы! Жарнамаңызды группага жазыңыз (бул жерге эмес).")
+        await message.answer("👋 Саламатсызбы! Жарнамаңызды группага жазыңыз")
 
 
 # --- ЗАЩИТА ОТ ДУРАКА: Ловим PDF, файлы, текст и стикеры ---
