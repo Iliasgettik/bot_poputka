@@ -468,10 +468,11 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         kb_builder = InlineKeyboardBuilder()
         
         # 1. Кнопка звонка (добавляется, если распарсенный номер состоит из цифр)
+       
         if clean_phone.replace('+', '').isdigit():
             kb_builder.row(types.InlineKeyboardButton(
                 text="📞 Телефон аркылуу чалуу",
-                url=f"tel:{clean_phone}"
+                url=f"tel://{clean_phone}"
             ))
             
         # 2. Кнопка добавления фото (только для водителей)
