@@ -464,29 +464,9 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 text += f"\n\n<i>⚠️ Бүгүнкү жарыя лимити: {remaining}/{daily_limit} калды</i>"
 
         # Кнопка "Унаа сүрөт кошуу" — для водителей такси и грузовых водителей
-        # --- ДИНАМИЧЕСКАЯ КЛАВИАТУРА С КНОПКОЙ ЗВОНКА ---
-        kb_builder = InlineKeyboardBuilder()
-        
-        # 1. Кнопка звонка (добавляется, если распарсенный номер состоит из цифр)
-        # 1. Кнопка WhatsApp (добавляется, если распарсенный номер состоит из цифр)
-        if clean_phone.replace('+', '').isdigit():
-            # Для WhatsApp нужен номер только из цифр, без плюса
-            wa_number = clean_phone.replace('+', '')
-            kb_builder.row(types.InlineKeyboardButton(
-                text="🟢 WhatsApp аркылуу жазуу",
-                url=f"https://wa.me/{wa_number}"
-            ))
-            
-        # 2. Кнопка добавления фото (только для водителей)
-        if role in DRIVER_ROLES:
-            kb_builder.row(types.InlineKeyboardButton(
-                text="🚗 Унаа сүрөт кошуу (Бекер!)", 
-                url=f"{BOT_LINK}?start=buy_vip"
-            ))
-            
-        # Если добавлена хотя бы одна кнопка, создаем разметку, иначе передаем None
-        publish_kb = kb_builder.as_markup() if kb_builder.as_markup().inline_keyboard else None
-
+        publish_kb = get_channel_publish_kb() if role in DRIVER_ROLES else None
+       
+    
         # Публикуем пост
         if is_vip and role in DRIVER_ROLES and photo_file_id:
             try:
