@@ -468,11 +468,13 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         kb_builder = InlineKeyboardBuilder()
         
         # 1. Кнопка звонка (добавляется, если распарсенный номер состоит из цифр)
-       
+        # 1. Кнопка WhatsApp (добавляется, если распарсенный номер состоит из цифр)
         if clean_phone.replace('+', '').isdigit():
+            # Для WhatsApp нужен номер только из цифр, без плюса
+            wa_number = clean_phone.replace('+', '')
             kb_builder.row(types.InlineKeyboardButton(
-                text="📞 Телефон аркылуу чалуу",
-                url=f"tel://{clean_phone}"
+                text="🟢 WhatsApp аркылуу жазуу",
+                url=f"https://wa.me/{wa_number}"
             ))
             
         # 2. Кнопка добавления фото (только для водителей)
