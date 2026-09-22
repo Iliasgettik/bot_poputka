@@ -366,14 +366,14 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
             icon, role_name = "📦", "ПОСЫЛКА"
             text = (f"{icon} <b>{role_name}</b>\n\n"
                     f"📤 <b>Каяктан</b>: {origin}\n📥 <b>Каякка</b>: {destination}\n🕒 <b>Убакыт</b>: {time}\n"
-                    f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
+                    f"📞 <b>Тел.</b>: {clean_phone}\n\n"
                     f"👤 <b>Жөнөтүүчү</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
         elif role == "жүк ташуу":
             icon, role_name = "🚛", "ЖҮК ТАШУУ"
             text = (f"{icon} <b>{role_name}</b>\n\n"
                     f"📍 <b>Каяктан</b>: {origin}\n🏁 <b>Каякка</b>: {destination}\n🕒 <b>Убакыт</b>: {time}\n"
                     f"🚛 <b>Унаа</b>: {car_model}\n📦 <b>Жүк</b>: {cargo_type}\n💰 <b>Баасы</b>: {price}\n"
-                    f"📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
+                    f"📞 <b>Тел.</b>: {clean_phone}\n\n"
                     f"👤 <b>Жарыя ээси</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
         else:
             role_name = "АЙДООЧУ" if role == "айдоочу" else "ЖҮРГҮНЧҮ"
@@ -383,7 +383,7 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
                 text += f"🚗 <b>Унаа</b>: {car_model}\n"
             text += f"💰 <b>Баасы</b>: {price}\n"
             label = 'Орун' if role == 'айдоочу' else 'Адам'
-            text += (f"👥 <b>{label}</b>: {passenger_count}\n📞 <b>Тел.</b>: <a href='tel:{clean_phone}'><code>{phone}</code></a>\n\n"
+            text += (f"👥 <b>{label}</b>: {passenger_count}\n📞 <b>Тел.</b>: {clean_phone}\n\n"
                      f"👤 <b>{role_name.capitalize()}</b>: <a href='tg://user?id={user_id}'>{message.from_user.full_name}</a>")
 
         try:
