@@ -61,6 +61,11 @@ async def db_retry(func, retries=3, delay=1.0):
 
 
 # --- КЛАССЫ СОСТОЯНИЙ ---
+# >>> НОВОЕ
+class AdminReplacePhoto(StatesGroup):
+    waiting_for_photo = State()
+# <<< КОНЕЦ
+
 class BuyVIP(StatesGroup):
     waiting_for_car_photo = State()
 
@@ -143,6 +148,9 @@ async def handle_car_photo(message: types.Message, state: FSMContext):
     builder.row(
         types.InlineKeyboardButton(text="✅ Одобрить (1 год)", callback_data=f"apprvip_365_{user_id}"),
     )
+    # >>> НОВОЕ: кнопка замены фото
+    builder.row(types.InlineKeyboardButton(text="🖼 Заменить фото", callback_data=f"replphoto_{user_id}"))
+    # <<< КОНЕЦ
     builder.row(types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_vip_{user_id}"))
 
     admin_text = (
@@ -263,6 +271,64 @@ async def handle_reject_reason(message: types.Message, state: FSMContext):
 
     await state.clear()
 
+# >>> НОВОЕ
+# --- АДМИН: ЗАМЕНА ФОТО ВОДИТЕЛЯ НА ОТРЕДАКТИРОВАННОЕ ---
+@dp.callback_query(F.data.startswith("replphoto_"))
+async def admin_replace_photo_start(callback: types.CallbackQuery, state: FSMContext):
+    if not ADMIN_ID or callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+    user_id = int(callback.data.split("_")[1])
+    await state.update_data(replace_user_id=user_id)
+    await state.set_state(AdminReplacePhoto.waiting_for_photo)
+    await callback.message.answer(
+        "🖼 Отправь отредактированное фото (можно как фото или как файл).\n"
+        "Отмена: /cancel"
+    )
+    await callback.answer()
+ 
+@dp.message(Command("cancel"), StateFilter(AdminReplacePhoto.waiting_for_photo))
+async def admin_replace_photo_cancel(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.")
+ 
+@dp.message(F.photo | (F.document & F.document.mime_type.startswith("image/")),
+            StateFilter(AdminReplacePhoto.waiting_for_photo))
+async def admin_replace_photo_receive(message: types.Message, state: FSMContext):
+    if not ADMIN_ID or message.from_user.id != ADMIN_ID:
+        return
+    data = await state.get_data()
+    user_id = data.get("replace_user_id")
+    if message.photo:
+        new_file_id = message.photo[-1].file_id
+    else:
+        # Файлом (без сжатия): скачиваем и заново отправляем как фото, чтобы получить photo file_id
+        buf = await bot.download(message.document)
+        sent = await bot.send_photo(
+            chat_id=ADMIN_ID,
+            photo=types.BufferedInputFile(buf.read(), filename="car.jpg"),
+            caption="🚗 НОВОЕ ФОТО АВТО"
+        )
+        new_file_id = sent.photo[-1].file_id
+    await asyncio.to_thread(
+        lambda: supabase.table("premium_drivers")
+        .update({"photo_file_id": new_file_id}).eq("user_id", user_id).execute()
+    )
+    # Снова показываем кнопки одобрения — одобряется уже новое фото
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="✅ Одобрить (1 год)", callback_data=f"apprvip_365_{user_id}"))
+    kb.row(types.InlineKeyboardButton(text="🖼 Заменить фото", callback_data=f"replphoto_{user_id}"))
+    kb.row(types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_vip_{user_id}"))
+    await message.answer(
+        f"✅ Фото водителя <code>{user_id}</code> заменено. Одобряем?",
+        parse_mode="HTML", reply_markup=kb.as_markup()
+    )
+    await state.clear()
+ 
+@dp.message(StateFilter(AdminReplacePhoto.waiting_for_photo))
+async def admin_replace_photo_wrong(message: types.Message):
+    await message.answer("Пришли фото (или файл-картинку). Отмена: /cancel")
+# <<< КОНЕЦ
 
 # --- АДМИН ПАНЕЛЬ: ДОБАВЛЕНИЕ VIP ВОДИТЕЛЕЙ ВРУЧНУЮ ---
 @dp.message(F.photo & F.caption.startswith('/addvip'))
