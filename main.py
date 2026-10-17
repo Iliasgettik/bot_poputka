@@ -558,7 +558,12 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
         # Кнопка "Унаа сүрөт кошуу" — для водителей такси и грузовых водителей
         publish_kb = get_channel_publish_kb() if role in DRIVER_ROLES else None
        
-    
+        # >>> НОВОЕ: у пассажиров и посылок нет кнопки, поэтому добавляем невидимый отступ,
+        # чтобы сообщение не "прилипало" к следующему
+        if publish_kb is None:
+            text += "\n\n⠀\n⠀"
+        # <<< КОНЕЦ
+        
         # Публикуем пост
         if is_vip and role in DRIVER_ROLES and photo_file_id:
             try:
