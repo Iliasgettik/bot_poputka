@@ -5,6 +5,8 @@
 role=null / confidence="low", а бот просит автора уточнить, вместо того
 чтобы опубликовать объявление с неверной ролью.
 """
+
+import re   # >>> НОВОЕ  (добавить строку рядом с import html / json / logging)
 import html
 import json
 import logging
@@ -12,6 +14,29 @@ import logging
 MODEL = "gpt-4o-mini"   # если ошибок всё ещё много — попробуйте модель сильнее
 
 ALLOWED_ROLES = {"айдоочу", "жүргүнчү", "посылка", "жүк ташуу"}
+
+
+# >>> НОВОЕ: список мест Таласской области + проверка
+TALAS_STEMS = (
+    "талас", "кара-буура", "карабуура", "кара буура", "кызыл-адыр", "кызыладыр",
+    "көпүрө-базар", "кепюро-базар", "бакай-ата", "бакайата", "бакай ата",
+    "ак-таш", "акташ", "ак-көл", "ак-кол", "айтматов", "чат-базар", "чатбазар",
+    "кош-коргон", "кум-дөбө", "ленинполь",
+)
+ 
+def is_talas_place(place) -> bool:
+    """True, если место относится к Таласу (город, район, село области)."""
+    if not place:
+        return False
+    s = str(place).lower().replace("ё", "е").replace("–", "-").replace("—", "-")
+    return any(re.search(r"(?<!\w)" + re.escape(st), s) for st in TALAS_STEMS)
+ 
+NOT_TALAS_TEXT = (
+    "Бул группада Талас багытындагы жарыялар гана жарыяланат "
+    "(Талас — Бишкек, Талас — Ош, Кара-Балта — Талас ж.б.). "
+    "Башка шаарлар/айылдардын ортосундагы маршруттар жарыяланбайт."
+)
+# <<< КОНЕЦ
 
 MISSING_TEXT = {
     "role": "Сиз айдоочусузбу (унаа бар) же жүргүнчүбү (унаа керек)?",
@@ -88,6 +113,17 @@ SYSTEM_PROMPT = """
 is_ad
 - false ТОЛЬКО если сообщение явно не про поездку/посылку/груз (приветствие, болтовня, реклама чего-то постороннего, ссылки, флуд).
 - Если это похоже на объявление о поездке, но неясное — is_ad = true, role = null.
+
+# >>> НОВОЕ (это текст внутри промпта, не код)
+ТОЛЬКО ТАЛАС
+Группа обслуживает только поездки, где Талас (город Талас или любое село/район Таласской
+области: Кара-Буура, Кызыл-Адыр, Бакай-Ата, Манас, Айтматов и т.п.) — это origin ИЛИ destination.
+Ставь talas_route=true, если хотя бы один конец маршрута в Таласской области
+(Талас—Бишкек, Ош—Талас, Каракол—Талас, Каинды—Талас, Кара-Балта—Талас = true).
+Ставь talas_route=false, если Таласа нет ни в одном конце (Ош—Бишкек, Нарын—Бишкек,
+Бишкек—Каракол, Бишкек—Токмок = false). Если известен только один конец и это не Талас — false.
+Если маршрута нет совсем — false. Промежуточные остановки по пути НЕ считаются.
+# <<< КОНЕЦ
 
 ПОЛЯ
 - origin/destination: города/места как написано. Обязательно извлекай общие направления вроде «шаарга» (в город) или «айылга» (в село) в destination, чтобы маршрут не был пустым. Нормализуй падежи («Таластан» → «Талас»).
@@ -194,6 +230,7 @@ is_ad
   "missing": [string],
   "origin": string or null,
   "destination": string or null,
+  "talas_route": boolean,        # >>> НОВОЕ  (одна строка)
   "time": string or null,
   "price": string or null,
   "passenger_count": string or null,
@@ -227,6 +264,7 @@ def _normalize(data: dict, original_text: str) -> dict:
     """Страховка: не доверяем GPT слепо — перепроверяем его вывод."""
     missing = [m for m in (data.get("missing") or []) if m in MISSING_TEXT]
 
+
     role = data.get("role")
     if role not in ALLOWED_ROLES:
         role = None
@@ -243,6 +281,16 @@ def _normalize(data: dict, original_text: str) -> dict:
     if role is None and "role" not in missing:
         missing.append("role")
 
+# >>> НОВОЕ: только Талас — проверяем сами, не доверяя только GPT
+    has_route = bool(data.get("origin") or data.get("destination"))
+    talas_ok = (
+        is_talas_place(data.get("origin"))
+        or is_talas_place(data.get("destination"))
+        or data.get("talas_route") is True
+    )
+    data["not_talas"] = bool(data.get("is_ad")) and has_route and not talas_ok
+    # <<< КОНЕЦ
+    
     data["role"] = role
     data["missing"] = missing
     data["clarification_needed"] = bool(data.get("is_ad")) and bool(missing)
@@ -268,4 +316,15 @@ def build_clarification_text(full_name: str, user_id: int, original_text: str, m
         f"🚕 <i>Бишкектен Таласка чыгам, Камри, 2 орун бош, 18:00, 0700123456</i>\n"
         f"👤 <i>Бишкектен Таласка 1 адам кетет, 18:00, 0700123456</i>\n\n"
         f"📝 <b>Сиздин текст:</b>\n<code>{safe_text}</code>"
+    )
+
+
+# >>> НОВОЕ: текст предупреждения
+def build_not_talas_text(full_name: str, user_id: int, origin, destination) -> str:
+    safe_name = html.escape(full_name or "Колдонуучу")
+    route = html.escape(f"{origin or '?'} — {destination or '?'}")
+    return (
+        f"🚫 <a href='tg://user?id={user_id}'>{safe_name}</a>, жарыяңыз жарыяланган жок.\n\n"
+        f"{NOT_TALAS_TEXT}\n\n"
+        f"📍 <b>Сиздин маршрут:</b> {route}"
     )

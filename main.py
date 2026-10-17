@@ -10,7 +10,8 @@ from aiogram.filters import Command, StateFilter
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from ad_parser import parse_ad, build_clarification_text
+#from ad_parser import parse_ad, build_clarification_text
+from ad_parser import parse_ad, build_clarification_text, build_not_talas_text
 
 # Импорты для Машины Состояний (FSM)
 from aiogram.fsm.state import State, StatesGroup
@@ -321,6 +322,31 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 
         if not parsed_data.get("is_ad"):
             return "SPAM"
+
+# >>> НОВОЕ: маршрут без Таласа — не публикуем
+        if parsed_data.get("not_talas"):
+            try:
+                await bot.delete_message(message.chat.id, message.message_id)
+            except Exception:
+                pass
+            warn = await bot.send_message(
+                chat_id=message.chat.id,
+                text=build_not_talas_text(
+                    message.from_user.full_name, user_id,
+                    parsed_data.get("origin"), parsed_data.get("destination")
+                ),
+                parse_mode="HTML"
+            )
+            async def _del_not_talas(chat_id, msg_id):
+                await asyncio.sleep(60)
+                try:
+                    await bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+            asyncio.create_task(_del_not_talas(warn.chat.id, warn.message_id))
+            return "NOT_TALAS"
+        # <<< КОНЕЦ
+
 
         # Роль или маршрут неясны: не публикуем, просим уточнить
         if parsed_data["clarification_needed"]:
