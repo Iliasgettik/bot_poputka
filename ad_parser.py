@@ -13,42 +13,11 @@ import logging
 
 MODEL = "gpt-4o-mini"   # если ошибок всё ещё много — попробуйте модель сильнее
 ALLOWED_ROLES = {"айдоочу", "жүргүнчү", "посылка", "жүк ташуу"}
-# Топонимы Таласской области (основы слов, регистр не важен, окончания не важны:
-# «таласка», «таластан», «таласта» → «талас»). Это страховка поверх ответа GPT.
-TALAS_STEMS = (
-    "талас", "кара-буура", "карабуура", "кара буура", "кызыл-адыр", "кызыладыр",
-    "көпүрө-базар", "кепюро-базар", "бакай-ата", "бакайата", "бакай ата",
-    "ак-таш", "акташ", "ак-көл", "ак-кол", "айтматов", "чат-базар", "чатбазар",
-    "кош-коргон", "кум-дөбө", "ленинполь",
-    "киров", "грозн", "коксай", "кок-сай", "көк-сай", "көк-ой", "кок-ой",
-)
- 
-# Крупные места ВНЕ Таласа. Блокируем маршрут, только если ОБА конца отсюда
-# (Ош—Бишкек, Нарын—Бишкек). Любое неизвестное село пропускаем.
-# «шаар/шаарга» = Бишкек.
-NON_TALAS_STEMS = (
-    "бишкек", "шаар", "ош", "нарын", "каракол", "чолпон", "балыкчы", "кызыл-кыя",
-    "жалал-абад", "джалал-абад", "баткен", "исфана", "токмок", "кара-балта",
-    "карабалта", "кант", "беловодск", "сокулук", "кемин", "кочкор", "ат-башы",
-    "ноокат", "узген", "өзгөн", "майлуу-суу", "таш-көмүр", "кербен", "ысык-көл",
-)
- 
-def _match_stems(place, stems) -> bool:
-    if not place:
-        return False
-    s = str(place).lower().replace("ё", "е").replace("–", "-").replace("—", "-")
-    return any(re.search(r"(?<!\w)" + re.escape(st), s) for st in stems)
- 
-def is_known_non_talas(place) -> bool:
-    return _match_stems(place, NON_TALAS_STEMS) and not is_talas_place(place)
- 
-def is_talas_place(place) -> bool:
-    """True, если название места относится к Таласу (город, район, село области)."""
-    if not place:
-        return False
-    s = str(place).lower().replace("ё", "е").replace("–", "-").replace("—", "-")
-    return any(re.search(r"(?<!\w)" + re.escape(st), s) for st in TALAS_STEMS)
- 
+# Словарь сёл Таласской области и проверка маршрута — в talas_places.py
+
+from talas_places import decide_not_talas, PLACES_FOR_PROMPT
+
+
 NOT_TALAS_TEXT = (
     "Бул группада Талас багытындагы жарыялар гана жарыяланат "
     "(Талас — Бишкек, Талас — Ош, Кара-Балта — Талас ж.б.). "
@@ -134,12 +103,15 @@ is_ad
 # >>> НОВОЕ (это текст внутри промпта, не код)
 ТОЛЬКО ТАЛАС
 Группа обслуживает только поездки, где Талас (город Талас или любое село/район Таласской
-области: Кара-Буура, Кызыл-Адыр, Бакай-Ата, Манас, Айтматов и т.п.) — это origin ИЛИ destination.
+области: Кара-Буура, Кызыл-Адыр, Бакай-Ата, Айтматов и т.п.) — это origin ИЛИ destination.
 Ставь talas_route=true, если хотя бы один конец маршрута в Таласской области
 (Талас—Бишкек, Ош—Талас, Каракол—Талас, Каинды—Талас, Кара-Балта—Талас = true).
-Ставь talas_route=false, если Таласа нет ни в одном конце (Ош—Бишкек, Нарын—Бишкек,
-Бишкек—Каракол, Бишкек—Токмок = false). Если известен только один конец и это не Талас — false.
-Если маршрута нет совсем — false. Промежуточные остановки по пути НЕ считаются.
+Ставь talas_route=false, ТОЛЬКО если оба конца точно известные места вне Таласской области
+(Ош—Бишкек, Нарын—Бишкек, Бишкек—Каракол, Бишкек—Токмок = false).
+Если название села/места тебе незнакомо или может быть опечаткой таласского села — ставь null, НЕ false.
+Если маршрута нет совсем — null. Промежуточные остановки по пути НЕ считаются.
+Названия пиши в origin/destination как в тексте, не заменяй незнакомое село на похожее.
+Села Таласской области: __TALAS_PLACES__
 # <<< КОНЕЦ
 
 ПОЛЯ
@@ -247,7 +219,7 @@ is_ad
   "missing": [string],
   "origin": string or null,
   "destination": string or null,
-  "talas_route": boolean,        # >>> НОВОЕ  (одна строка)
+  "talas_route": true | false | null,
   "time": string or null,
   "price": string or null,
   "passenger_count": string or null,
@@ -256,7 +228,7 @@ is_ad
   "car_model": string or null
 }
 """
-
+SYSTEM_PROMPT = SYSTEM_PROMPT.replace("__TALAS_PLACES__", PLACES_FOR_PROMPT)
 
 async def parse_ad(aclient, text: str) -> dict:
     """
@@ -300,13 +272,8 @@ def _normalize(data: dict, original_text: str) -> dict:
 
 # >>> НОВОЕ: только Талас — проверяем сами, не доверяя только GPT
     has_route = bool(data.get("origin") or data.get("destination"))
-    talas_ok = (
-        is_talas_place(data.get("origin"))
-        or is_talas_place(data.get("destination"))
-        or data.get("talas_route") is True
-    )
-    data["not_talas"] = bool(data.get("is_ad")) and has_route and not talas_ok
-    # <<< КОНЕЦ
+    data["not_talas"] = bool(data.get("is_ad")) and has_route and decide_not_talas(
+    data.get("origin"), data.get("destination"), data.get("talas_route"))
     
     data["role"] = role
     data["missing"] = missing
