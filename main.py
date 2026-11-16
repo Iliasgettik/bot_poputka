@@ -113,6 +113,15 @@ def get_channel_publish_kb():
 # --- КОМАНДА /start ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
+
+    if message.chat.type != "private":
+        if not (ADMIN_ID and message.from_user.id == ADMIN_ID):
+            try:
+                await message.delete()
+            except Exception:
+                pass
+        return
+
     if message.text and "buy_vip" in message.text:
         text = (
             "🚗 <b>Сүрөтү менен жарыя киргизүү — БЕКЕР!</b>\n\n"
@@ -334,6 +343,11 @@ async def admin_replace_photo_wrong(message: types.Message):
 @dp.message(F.photo & F.caption.startswith('/addvip'))
 async def add_vip_driver(message: types.Message):
     if not ADMIN_ID or message.from_user.id != ADMIN_ID:
+        if message.chat.type != "private":
+            try:
+                await message.delete()
+            except Exception:
+                pass
         return
     try:
         driver_id = int(message.caption.split()[1])
@@ -362,8 +376,17 @@ async def add_vip_driver(message: types.Message):
 
 
 # --- КОМАНДА /id ---
+# --- КОМАНДА /id ---
 @dp.message(Command("id"))
 async def cmd_id(message: types.Message):
+    if not ADMIN_ID or message.from_user.id != ADMIN_ID:
+        if message.chat.type != "private":
+            try:
+                await message.delete()
+            except Exception:
+                pass
+        return
+
     env_id = os.getenv("CHANNEL_ID")
     chat_id = message.chat.id
     is_match = str(chat_id) == str(env_id).strip()
@@ -600,6 +623,15 @@ async def process_and_publish_ad(text_to_analyze: str, message: types.Message):
 # =====================================================================
 # --- ХЭНДЛЕР №1: Ловит ОБЫЧНЫЕ сообщения (и текст, и фото с текстом) ---
 # =====================================================================
+@dp.message(F.chat.type != 'private', F.text.startswith('/') | F.caption.startswith('/'))
+async def delete_commands_in_group(message: types.Message):
+    if ADMIN_ID and message.from_user.id == ADMIN_ID:
+        return
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
 @dp.message((F.text | F.caption) & ~F.text.startswith('/'), StateFilter(None))
 async def handle_new_ad(message: types.Message, state: FSMContext):
     if ADMIN_ID and message.from_user.id == ADMIN_ID:
